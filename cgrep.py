@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
-HELP="""
+HELP = """
  Advanced grep tool that can:
 
  find a file recursively:
@@ -59,23 +59,23 @@ class Color:
   def disable(self):
     self.enabled = False
 
-  def cl(self, color = None, msg = ""):
-    if not self.enabled :
+  def cl(self, color=None, msg=""):
+    if not self.enabled:
       return msg
 
     if color == None or color == "/":
       return "\033[0m"
 
-    if msg != "" :
+    if msg != "":
       return "\033[%dm%s\033[0m" % (Color.ANSI_COLORS[color], msg)
 
     return "\033[%dm" % Color.ANSI_COLORS[color]
 
 _color = Color()
 
-def should_skip_dir(dirname) :
+def should_skip_dir(dirname):
   """ Check additional skip conditions """
-  if _arg_no_skip :
+  if _arg_no_skip:
     return (False, None)
 
   if dirname in _skip_dir:
@@ -92,9 +92,9 @@ def should_skip_dir(dirname) :
       return (True, restr)
   return (False, None)
 
-def should_skip_file(filename) :
+def should_skip_file(filename):
   """ Check additional skip conditions """
-  if _arg_no_skip :
+  if _arg_no_skip:
     return False
 
   (fname, ext) = os.path.splitext(filename)
@@ -108,7 +108,7 @@ def should_skip_file(filename) :
 def lineno_file(filename, lineno):
   line_count = 0
   good_lines = []
-  kp = (0,"")
+  kp = (0, "")
   with open(filename, "r") as fd:
     for ln in fd:
       line_count += 1
@@ -117,24 +117,24 @@ def lineno_file(filename, lineno):
         if _arg_context:
           good_lines.append(kp)
           good_lines.append((line_count, good_ln))
-          good_lines.append((line_count+1, next(fd,'')))
+          good_lines.append((line_count + 1, next(fd, '')))
         else:
           good_lines.append((line_count, good_ln))
-      kp = (line_count,ln[:-1])
+      kp = (line_count, ln[:-1])
   return good_lines
 
 def grep_file(filename, pattern):
   line_count = 0
   good_lines = []
-  kp = (0,"")
+  kp = (0, "")
   with open(filename, "r") as fd:
     for ln in fd:
       line_count += 1
       m = pattern.search(ln)
       if m != None:
-        a = m.string[ : m.start(0)]
-        b = m.string[m.start(0) : m.end(0)]
-        c = m.string[m.end(0) : ]
+        a = m.string[:m.start(0)]
+        b = m.string[m.start(0):m.end(0)]
+        c = m.string[m.end(0):]
         if len(a) > _max_line_part:
           a = "..." + a[len(a)-_max_line_part:]
         if len(c) > _max_line_part:
@@ -143,25 +143,25 @@ def grep_file(filename, pattern):
         if _arg_context:
           good_lines.append(kp)
           good_lines.append((line_count, good_ln))
-          good_lines.append((line_count+1, next(fd,'')))
+          good_lines.append((line_count + 1, next(fd, '')))
         else:
           good_lines.append((line_count, good_ln))
-      kp = (line_count,ln[:-1])
+      kp = (line_count, ln[:-1])
   return good_lines
 
 def do_grep(filepattern, textpattern, dirname):
-  for root, dirs, files in os.walk(dirname, topdown = True):
+  for root, dirs, files in os.walk(dirname, topdown=True):
     for name in dirs:
       fn = os.path.join(root, name)
       (flag, text) = should_skip_dir(name)
       if flag:
         dirs.remove(name)
         if text != None and _arg_warn_skip:
-          print _color.cl("magenta","Skipped (%s) %s " % (text, fn))
+          print _color.cl("magenta", "Skipped (%s) %s " % (text, fn))
         continue
     for name in files:
       if filepattern.search(name):
-        fn = os.path.join(root,name)
+        fn = os.path.join(root, name)
         if should_skip_file(name):
           continue
         try:
@@ -169,9 +169,9 @@ def do_grep(filepattern, textpattern, dirname):
           if len(good_lines) > 0:
             print _color.cl("yellow", fn)
             for (n, l) in good_lines:
-              print "%4d: %s" % (n,l)
+              print "%4d: %s" % (n, l)
         except Exception as e:
-            print _color.cl("magenta", fn), e
+          print _color.cl("magenta", fn), e
 
 """ filename search """
 def do_glob(pattern, dirname):
@@ -182,7 +182,7 @@ def do_glob(pattern, dirname):
       if flag:
         dirs.remove(name)
         if text != None and _arg_warn_skip:
-          print _color.cl("magenta","Skipped [%s] %s" % (text, fn))
+          print _color.cl("magenta", "Skipped [%s] %s" % (text, fn))
         continue
       if pattern.search(name):
         print _color.cl("yellow", fn)
@@ -200,40 +200,39 @@ def parse_tag_line(ln, kind, ident):
     """ Kind quick check it shopuld be prepared ';"\t'+kind"""
     return (None, None, None, None)
 
-  i1 = ln.index("\t");
+  i1 = ln.index("\t")
   tagname = ln[0:i1]
 
-  if re.match(ident,tagname) == None:
+  if re.match(ident, tagname) == None:
     return (None, None, None, None)
 
-  i2 = ln.index("\t",i1+1);
-  srcfile = ln[i1+1:i2]
+  i2 = ln.index("\t", i1 + 1)
+  srcfile = ln[i1 + 1:i2]
 
   lineno = None
   pattern = None
-  if ln[i2+1] == '/':
-    i3 = ln.index('$/;', i2+2)
-    pattern = re.sub(r"([()*\[\]])",r"\\\1", ln[i2+2:i3+1])
+  if ln[i2 + 1] == '/':
+    i3 = ln.index('$/;', i2 + 2)
+    pattern = re.sub(r"([()*\[\]])", r"\\\1", ln[i2 + 2:i3 + 1])
   else:
-    i3 = ln.index(';', i2+2)
+    i3 = ln.index(';', i2 + 2)
     lineno = int(ln[i2:i3])
 
   return (tagname, srcfile, pattern, lineno)
 
 """ Support function """
-def fatal(msg, e = None):
-    s = " (%s)" % str(e) if e != None else ""
-    print _color.cl("red",msg + s)
-    sys.exit(-1)
+def fatal(msg, e=None):
+  s = " (%s)" % str(e) if e != None else ""
+  print _color.cl("red", msg + s)
+  sys.exit(-1)
 
 def usage():
-    print HELP
-    sys.exit(7)
+  print HELP
+  sys.exit(7)
 
 def signal_handler(signal, frame):
   sys.stdout.write("\nInterrupted. Exiting ...\n")
   sys.exit(-1)
-
 
 if __name__ == '__main__':
   """ set ctrl-C handler and reopen stdout unbuffered """
@@ -286,13 +285,13 @@ if __name__ == '__main__':
       assert False, "unhandled option"
 
   if len(args) == 0:
-     usage()
+    usage()
 
   """ Pre-process extra skip """
   for n in extra_skip:
-    if n[0] == '.' :
+    if n[0] == '.':
       _extra_skip_ext.append(n)
-    elif n[0] == '/' :
+    elif n[0] == '/':
       assert n[-1] == '/', "bad regex"
       _extra_skip_re.append((re.compile(n[1:-1]), n[1:-1]))
     else:
@@ -311,13 +310,13 @@ if __name__ == '__main__':
       args.append(".")
     if len(args) >= 2 and os.path.isdir(args[1]):
       """ filepattern missed """
-      args.insert(2,"*")
+      args.insert(2, "*")
 
-    textpat = re.compile(args[0],_arg_re_flags)
+    textpat = re.compile(args[0], _arg_re_flags)
 
     """ file pattern is glob and case sensitive """
     p = fnmatch.translate(args[1])
-    filepat = re.compile(p,0)
+    filepat = re.compile(p, 0)
     for d in args[2:]:
       do_grep(filepat, textpat, d)
 
@@ -328,14 +327,14 @@ if __name__ == '__main__':
       args.append(".")
 
     pat = args[0]
-    if pat[0] == '/' and pat[-1] == '/' :
+    if pat[0] == '/' and pat[-1] == '/':
       """ /re/ enforce re instead of glob """
       pat = pat[1:-1]
     else:
       p = fnmatch.translate(pat)
       pat = p[:-7] # strip \Z(?ms)
 
-    filepat = re.compile(pat,_arg_re_flags)
+    filepat = re.compile(pat, _arg_re_flags)
     for d in args[1:]:
       do_glob(filepat, d)
 
@@ -346,10 +345,10 @@ if __name__ == '__main__':
 
     (kind, ident) = args[1].split(":")
     """ Hacks, move it off loop """
-    kind= ';"\t'+kind
+    kind = ';"\t' + kind
     ident_re = re.compile(ident, _arg_re_flags)
 
-    with open(args[0],"r") as tagf:
+    with open(args[0], "r") as tagf:
       for ln in tagf:
         (tagname, srcfile, tagpattern, lineno) = parse_tag_line(ln, kind, ident)
         if tagname != None:
@@ -363,12 +362,9 @@ if __name__ == '__main__':
           if len(good_lines) > 0:
             print _color.cl("yellow", srcfile)
             for (n, l) in good_lines:
-              print "%4d: %s" % (n,l)
+              print "%4d: %s" % (n, l)
   else:
     fatal("No search kind specified should be either -e (grep) or -g (glob)")
     sys.exit(7)
 
   sys.exit(0)
-
-
-
