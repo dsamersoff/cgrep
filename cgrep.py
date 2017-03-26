@@ -1,6 +1,14 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
+import os
+import sys
+import getopt
+import signal
+
+import re
+import fnmatch
+
 HELP = """
  Advanced grep tool that can:
 
@@ -16,14 +24,6 @@ HELP = """
     find . -name "*.[ch]" | ctags -L - -f tagfile
 """
 
-import os
-import sys
-import getopt
-import signal
-import traceback
-
-import re
-import fnmatch
 
 """ Parameters """
 _skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
@@ -47,7 +47,7 @@ _extra_skip_re = []
 
 
 """ Fancy printing """
-class Color:
+class Color(object):
   COLOR = "\033[%dm%s\033[0m"
   ANSI_COLORS = {"default" : 0, "black" : 30, "red" : 31, "green" : 32,
                  "yellow" : 33, "blue" : 34, "magenta" : 35, "cyan" : 36,
@@ -63,7 +63,7 @@ class Color:
     if not self.enabled:
       return msg
 
-    if color == None or color == "/":
+    if color is None or color == "/":
       return "\033[0m"
 
     if msg != "":
@@ -97,7 +97,7 @@ def should_skip_file(filename):
   if _arg_no_skip:
     return False
 
-  (fname, ext) = os.path.splitext(filename)
+  (fname, ext) = os.path.splitext(filename) #pylint: disable=unused-variable
   if ext in _skip_ext:
     return True
 
@@ -203,7 +203,7 @@ def parse_tag_line(ln, kind, ident):
   i1 = ln.index("\t")
   tagname = ln[0:i1]
 
-  if re.match(ident, tagname) == None:
+  if re.match(ident, tagname) is None:
     return (None, None, None, None)
 
   i2 = ln.index("\t", i1 + 1)
@@ -230,7 +230,7 @@ def usage():
   print HELP
   sys.exit(7)
 
-def signal_handler(signal, frame):
+def signal_handler(signal, frame): #pylint: disable=unused-argument
   sys.stdout.write("\nInterrupted. Exiting ...\n")
   sys.exit(-1)
 
