@@ -10,24 +10,30 @@ import re
 import fnmatch
 
 HELP = """
- Advanced grep tool that can:
+  Advanced grep tool that can:
 
- find a file recursively:
-   cgrep -g[is] -x exclude filename_glob dir1 dir2
+  find a file recursively:
+    cgrep -g[is] -x exclude filename_glob dir1 dir2
 
- find pattern in file
-   cgrep -e -x exclude filename_glob dir
+  find pattern in file
+    cgrep -e -x exclude filename_glob dir
 
- scoped find (ctags support)
-   cgrep -t filename.tag scope:pattern
-  Use:
-    find . -name "*.[ch]" | ctags -L - -f tagfile
+  scoped find (ctags support)
+    cgrep -t filename.tag scope:pattern
+
+  Tips:
+    Build tag file: find . -name "*.[ch]" | ctags -L - -f tagfile
+    Overwrite default skip: ~/.cgrep_skip.txt or ~/.config/cgrep/skip.txt
+      skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
+      skip_ext = [".bin", ".o", ".obj", ".class", ".so"]
 """
 
 
 """ Parameters """
 _skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
 _skip_ext = [".bin", ".o", ".obj", ".class", ".so", ".dynlib", ".dll", ".zip", ".jar", ".gz", ".gch", ".pch", ".pdb", ".swp", ".jpg", ".ttf"]
+_skip_files = [".cgrep_skip.txt", "~/.cgrep_skip.txt", "~/.config/cgrep/skip.txt"]
+
 _max_line_part = 40
 
 _arg_re_flags = 0
@@ -220,6 +226,20 @@ def parse_tag_line(ln, kind, ident):
 
   return (tagname, srcfile, pattern, lineno)
 
+def skip_from_file(filename):
+  (skip_dir, skip_ext) = ([], [])
+  with open(filename,'r') as inf:
+    data = inf.read()
+
+  m = re.search("skip_dir[ \t]*=[ \t]*(\[.*\])", data)
+  if m is not None:
+    skip_dir = eval(m.group(1))
+
+  m = re.search("skip_ext[ \t]*=[ \t]*(\[.*\])", data)
+  if m is not None:
+    skip_ext = eval(m.group(1))
+  return (skip_dir, skip_ext)
+
 """ Support function """
 def fatal(msg, e=None):
   s = " (%s)" % str(e) if e != None else ""
@@ -286,6 +306,21 @@ if __name__ == '__main__':
 
   if len(args) == 0:
     usage()
+
+  """ Read skip from file """
+  (fskip_dir, fskip_ext) = ([], [])
+  for fn in _skip_files:
+    fns = os.path.expanduser(fn)
+    if os.path.exists(fns):
+      (skip_dir, skip_ext) = skip_from_file(fns)
+      fskip_dir += skip_dir
+      fskip_ext += skip_ext
+
+  """ Override defaults if skiplist we read from files is not empty """
+  if len(fskip_dir) > 0:
+    _skip_dir = list(set(fskip_dir))
+  if len(fskip_ext) > 0:
+    _skip_ext = list(set(fskip_ext))
 
   """ Pre-process extra skip """
   for n in extra_skip:
