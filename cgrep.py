@@ -13,10 +13,10 @@ HELP = """
   Advanced grep tool that can:
 
   find a file recursively:
-    cgrep -g[is] -x exclude filename_glob dir1 dir2
+    cgrep -o outfile -g[is] -x exclude filename_glob dir1 dir2
 
   find pattern in file
-    cgrep -e -x exclude filename_glob dir
+    cgrep -o outfile -e -x exclude filename_glob dir
 
   scoped find (ctags support)
     cgrep -t filename.tag scope:pattern
@@ -33,6 +33,7 @@ HELP = """
 _skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
 _skip_ext = [".bin", ".o", ".obj", ".class", ".so", ".dynlib", ".dll", ".zip", ".jar", ".gz", ".gch", ".pch", ".pdb", ".swp", ".jpg", ".ttf"]
 _skip_files = [".cgrep_skip.txt", "~/.cgrep_skip.txt", "~/.config/cgrep/skip.txt"]
+_skip_fullfilename = []
 
 _max_line_part = 40
 
@@ -42,6 +43,7 @@ _arg_word = False
 _arg_warn_skip = True
 _arg_no_skip = False
 _arg_context = False
+_arg_outfile = None
 
 """ global varables """
 
@@ -50,7 +52,8 @@ _search_kind = None
 _extra_skip_dir = []
 _extra_skip_ext = []
 _extra_skip_re = []
-
+_out_fd = None
+_html_output = False
 
 """ Fancy printing """
 class Color(object):
@@ -58,12 +61,19 @@ class Color(object):
   ANSI_COLORS = {"default" : 0, "black" : 30, "red" : 31, "green" : 32,
                  "yellow" : 33, "blue" : 34, "magenta" : 35, "cyan" : 36,
                  "white" : 37}
+  
+  HTML_COLORS = {"default" : "", "black" : "#000000", "red" : "#aa0000", "green" : "#00aa00",
+                 "yellow" : "#aaaa00", "blue" : "#0000aa", "magenta" : "#aa00aa", "cyan" : "#00aaaa",
+                 "white" : "#ffffff"}
 
   def __init__(self):
     self.enabled = True
 
   def disable(self):
     self.enabled = False
+
+  def toggle(self):
+    self.enabled = not self.enabled
 
   def cl(self, color=None, msg=""):
     if not self.enabled:
@@ -76,6 +86,38 @@ class Color(object):
       return "\033[%dm%s\033[0m" % (Color.ANSI_COLORS[color], msg)
 
     return "\033[%dm" % Color.ANSI_COLORS[color]
+  
+  def html(self, color, msg):
+    if color is None or color == "/":
+      return "</FONT>"
+
+    if msg != "":
+      return "<FONT color='%s'>%s</FONT>" % (Color.HTML_COLORS[color], msg.replace(" ", "&nbsp;"))
+
+    return "<FONT color='%s'>" % Color.HTML_COLORS[color]
+  
+  def prn(self, color, msg, eol = True):
+    if _out_fd != None:
+      if _html_output:
+        _out_fd.write(self.html(color, msg))
+        if eol: 
+          _out_fd.write("<br />\n")
+      else:
+        _out_fd.write(msg)
+        if eol: 
+          _out_fd.write("\n")
+          
+    print (self.cl(color, msg)),
+    if eol: 
+      print ""
+      
+  def ref(self, color, msg, filename):
+    if _out_fd != None:
+      if _html_output:
+        _out_fd.write("""<A href="%s">%s</A><BR />\n""" % (filename, self.html(color, msg)))
+      else:
+        _out_fd.write(msg + "\n")
+    print (self.cl(color, msg))
 
 _color = Color()
 
@@ -103,6 +145,11 @@ def should_skip_file(filename):
   if _arg_no_skip:
     return False
 
+  if len(_skip_fullfilename) > 0:
+    fullfilename = os.path.join(os.getcwd(), filename)
+    if fullfilename in _skip_fullfilename:
+      return True
+ 
   (fname, ext) = os.path.splitext(filename) #pylint: disable=unused-variable
   if ext in _skip_ext:
     return True
@@ -132,7 +179,7 @@ def lineno_file(filename, lineno):
 def grep_file(filename, pattern):
   line_count = 0
   good_lines = []
-  kp = (0, "")
+  kp = (0, "", "", "")
   with open(filename, "r") as fd:
     for ln in fd:
       line_count += 1
@@ -140,19 +187,18 @@ def grep_file(filename, pattern):
       if m != None:
         a = m.string[:m.start(0)]
         b = m.string[m.start(0):m.end(0)]
-        c = m.string[m.end(0):]
+        c = m.string[m.end(0):-1]
         if len(a) > _max_line_part:
           a = "..." + a[len(a)-_max_line_part:]
         if len(c) > _max_line_part:
           c = c[:_max_line_part] + "..."
-        good_ln = a + _color.cl("green") + b + _color.cl("/") + c[:-1]
         if _arg_context:
           good_lines.append(kp)
-          good_lines.append((line_count, good_ln))
-          good_lines.append((line_count + 1, next(fd, '')))
+          good_lines.append((line_count, a, b, c))
+          good_lines.append((line_count + 1, next(fd, ''), "", ""))
         else:
-          good_lines.append((line_count, good_ln))
-      kp = (line_count, ln[:-1])
+          good_lines.append((line_count, a, b, c))
+      kp = (line_count, ln[:-1], "", "")
   return good_lines
 
 def do_grep(filepattern, textpattern, dirname):
@@ -163,7 +209,7 @@ def do_grep(filepattern, textpattern, dirname):
       if flag:
         dirs.remove(name)
         if text != None and _arg_warn_skip:
-          print _color.cl("magenta", "Skipped (%s) %s " % (text, fn))
+          _color.ref("magenta", "Skipped (%s) %s " % (text, fn), os.path.abspath(fn))
         continue
     for name in files:
       if filepattern.search(name):
@@ -173,9 +219,15 @@ def do_grep(filepattern, textpattern, dirname):
         try:
           good_lines = grep_file(fn, textpattern)
           if len(good_lines) > 0:
-            print _color.cl("yellow", fn)
-            for (n, l) in good_lines:
-              print "%4d: %s" % (n, l)
+            _color.ref("yellow", fn, os.path.abspath(fn))
+            for (n, a, b, c) in good_lines:
+              if b != "" or c != "":
+                _color.prn("default", "%4d: %s" % (n, a), False)
+                _color.prn("green", b, False)
+                _color.prn("default", c, True)
+              else: 
+                _color.prn("default", "%4d: %s" % (n, a))
+                
         except Exception as e:
           print _color.cl("magenta", fn), e
 
@@ -188,10 +240,10 @@ def do_glob(pattern, dirname):
       if flag:
         dirs.remove(name)
         if text != None and _arg_warn_skip:
-          print _color.cl("magenta", "Skipped [%s] %s" % (text, fn))
+          _color.prn("magenta", "Skipped [%s] %s" % (text, fn))
         continue
       if pattern.search(name):
-        print _color.cl("yellow", fn)
+        _color.prn("yellow", fn)
     if _arg_dirsonly:
       continue
 
@@ -199,7 +251,7 @@ def do_glob(pattern, dirname):
       if pattern.search(name):
         fn = os.path.join(root, name)
         if not should_skip_file(name):
-          print fn
+          _color.prn("default", fn)
 
 def parse_tag_line(ln, kind, ident):
   if ln.find(kind) == -1:
@@ -266,18 +318,21 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                               "hcegdisSux:t",
-                               ["help", "color", "grep", "glob", "dirsonly", "ignorecase", "warnskip", "noskip", "context", "exclude", "tags"])
+                               "hcegdisSux:to:",
+                               ["help", "color", "grep", "glob", "dirsonly", "ignorecase", "warnskip", "noskip", "context", "exclude", "tags", "output"])
   except getopt.GetoptError as err:
     print str(err)
     usage()
 
   extra_skip = list()
+  if os.name == 'nt':
+    """ Disable color output on windows by default """
+    _color.disable()
 
   for o, a in opts:
     if o in ("-c", "--color"):
       """Use ansy color on printing"""
-      _color.disable()
+      _color.toggle()
     elif o in ("-e", "--grep"):
       _search_kind = "grep"
     elif o in ("-g", "--glob"):
@@ -289,7 +344,7 @@ if __name__ == '__main__':
           test:build:/.*class/:.back
       """
       extra_skip += a.split(":")
-    elif o in ("-d", "--dirsonly"):
+    elif o in ("-d", "--dirsonly"): 
       _arg_dirsonly = True
     elif o in ("-i", "--ignorecase"):
       _arg_re_flags |= re.IGNORECASE
@@ -299,6 +354,9 @@ if __name__ == '__main__':
       _arg_no_skip = True
     elif o in ("-u", "--context"):
       _arg_context = True
+    elif o in ("-o", "--output"):
+      """ Redirect all output to a file """
+      _arg_outfile = a
     elif o in ("-h", "--help"):
       usage()
     else:
@@ -334,6 +392,18 @@ if __name__ == '__main__':
 
   filepat = None
   textpat = None
+  
+  if _arg_outfile != None:
+    """ Redirect all output to file. Rely on OS to close it """
+    _arg_outfile = os.path.abspath(_arg_outfile)
+    _skip_fullfilename.append(_arg_outfile)
+    
+    _out_fd = file(_arg_outfile, "w")
+    
+    """ Enable color output in html format if outfile have html ext """
+    lw_outfile = _arg_outfile.lower()
+    if lw_outfile.endswith(".html") or lw_outfile.endswith(".htm"):
+      _html_output = True
 
   if _search_kind == "grep":
     """ args should be textpattern filepattern dir1 ... dirN"""
@@ -395,9 +465,9 @@ if __name__ == '__main__':
             good_lines = grep_file(srcfile, tag_re)
 
           if len(good_lines) > 0:
-            print _color.cl("yellow", srcfile)
+            _color.prn("yellow", srcfile)
             for (n, l) in good_lines:
-              print "%4d: %s" % (n, l)
+              _color.prn("default", "%4d: %s" % (n, l))
   else:
     fatal("No search kind specified should be either -e (grep) or -g (glob)")
     sys.exit(7)
