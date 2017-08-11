@@ -95,21 +95,24 @@ class Color(object):
       return "<FONT color='%s'>%s</FONT>" % (Color.HTML_COLORS[color], msg.replace(" ", "&nbsp;"))
 
     return "<FONT color='%s'>" % Color.HTML_COLORS[color]
-  
-  def prn(self, color, msg, eol = True):
+ 
+  def eol(self, need_eol):
+    if need_eol:
+      return "\n"
+    return ""
+
+  def html_eol(self, need_eol):
+    if need_eol:
+      return "<br />\n"
+    return ""
+ 
+  def prn(self, color, msg, need_eol = True):
     if _out_fd != None:
       if _html_output:
-        _out_fd.write(self.html(color, msg))
-        if eol: 
-          _out_fd.write("<br />\n")
+        _out_fd.write(self.html(color, msg) + self.html_eol(need_eol)) 
       else:
-        _out_fd.write(msg)
-        if eol: 
-          _out_fd.write("\n")
-          
-    print (self.cl(color, msg)),
-    if eol: 
-      print ""
+        _out_fd.write(msg + self.eol(need_eol))
+    sys.stdout.write(self.cl(color, msg) + self.eol(need_eol))
       
   def ref(self, color, msg, filename):
     if _out_fd != None:
