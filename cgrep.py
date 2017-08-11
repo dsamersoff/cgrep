@@ -47,7 +47,7 @@ _arg_outfile = None
 
 """ global varables """
 
-_search_kind = None
+_search_kind = "grep"
 
 _extra_skip_dir = []
 _extra_skip_ext = []
