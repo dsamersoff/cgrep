@@ -167,24 +167,6 @@ def should_skip_file(filename):
     return True
   return False
 
-def lineno_file(filename, lineno):
-  line_count = 0
-  good_lines = []
-  kp = (0, "")
-  with open(filename, "r") as fd:
-    for ln in fd:
-      line_count += 1
-      if line_count == lineno:
-        good_ln = _color.cl("green") + ln + _color.cl("/")
-        if _arg_context:
-          good_lines.append(kp)
-          good_lines.append((line_count, good_ln, "", ""))
-          good_lines.append((line_count + 1, next(fd, ''), "", ""))
-        else:
-          good_lines.append((line_count, good_ln))
-      kp = (line_count, ln[:-1], "", "")
-  return good_lines
-
 def grep_file(filename, pattern):
   line_count = 0
   good_lines = []
@@ -210,15 +192,16 @@ def grep_file(filename, pattern):
       kp = (line_count, ln[:-1], "", "")
   return good_lines
 
-def print_good_lines(good_lines):
-  for (n, a, b, c) in good_lines:
-    if b != "" or c != "":
-      _color.prn("default", "%4d: %s" % (n, a), False)
-      _color.prn("green", b, False)
-      _color.prn("default", c, True)
-    else:
-      _color.prn("default", "%4d: %s" % (n, a))
+def print_good_line(good_line):
+  (n, a, b, c) = good_line
+  if b != "" or c != "":
+    _color.prn("default", "%4d: %s" % (n, a), False)
+    _color.prn("green", b, False)
+    _color.prn("default", c, True)
+  else:
+    _color.prn("default", "%4d: %s" % (n, a))
 
+""" grep search """
 def do_grep(filepattern, textpattern, dirname):
   for root, dirs, files in os.walk(dirname, topdown=True):
     for name in dirs:
@@ -238,7 +221,8 @@ def do_grep(filepattern, textpattern, dirname):
           good_lines = grep_file(fn, textpattern)
           if len(good_lines) > 0:
             _color.ref("yellow", fn, os.path.abspath(fn))
-            print_good_lines(good_lines)
+            for good_line in good_lines:
+              print_good_line(good_line)
         except Exception as e:
           print _color.cl("magenta", fn), e
 
@@ -264,30 +248,57 @@ def do_glob(pattern, dirname):
         if not should_skip_file(name):
           _color.prn("default", fn)
 
-def parse_tag_line(ln, scope, ident):
-  if ln.find(scope) == -1:
-    """ Kind quick check it shopuld be prepared ';"\t'+kind"""
-    return (None, None, None, None)
+def parse_tag_line(p_ln, p_scope, p_ident_re):
+  if p_ln.startswith("!"):
+    """ Skip comments """
+    return (None, None, None)
 
-  i1 = ln.index("\t")
-  tagname = ln[0:i1]
+  try:
+    (tagname, srcfile, tagpattern, scope) = p_ln.split("\t", 3)
+  except ValueError as ex:
+    print "CTAGS line format error: '%s'" % ln
+    return (None, None, None)
 
-  if re.match(ident, tagname) is None:
-    return (None, None, None, None)
+  scope = scope[0]
+  if scope != p_scope:
+    """ Skip wrong scope """
+    return (None, None, None)
 
-  i2 = ln.index("\t", i1 + 1)
-  srcfile = ln[i1 + 1:i2]
+  if p_ident_re.match(tagname) == None:
+    """ Skip wrong ident """
+    return (None, None, None)
 
-  lineno = None
-  pattern = None
-  if ln[i2 + 1] == '/':
-    i3 = ln.index('$/;', i2 + 2)
-    pattern = re.sub(r"([()*\[\]])", r"\\\1", ln[i2 + 2:i3 + 1])
-  else:
-    i3 = ln.index(';', i2 + 2)
-    lineno = int(ln[i2:i3])
+  tagpattern = tagpattern[1:-3] if tagpattern.endswith(';"') else tagpattern[1:-1]
+  tagpattern = tagpattern.replace("(", "\\(")
+  tagpattern = tagpattern.replace(")", "\\)")
 
-  return (tagname, srcfile, pattern, lineno)
+  try:
+    tag_re = re.compile(tagpattern[1:-3])
+  except Exception as ex:
+    print "CTAGS re format error: '%s'" % tagpattern
+    return (None, None, None)
+
+  return (tagname, srcfile, tag_re)
+
+def do_ctags(tagfile, scope, ident):
+  ident_re = re.compile(ident, _arg_re_flags)
+  found_lines = dict()
+
+  with open(args[0], "r") as tagf:
+    for ln in tagf:
+      (tagname, srcfile, tag_re) = parse_tag_line(ln, scope, ident_re)
+      if tagname != None:
+        good_lines = grep_file(srcfile, tag_re)
+        for (n, a, b, c) in good_lines:
+          found_lines["%s:%04d" % (srcfile, int(n))] = (n, a, b, c)
+
+  kept_fn = None
+  for key in sorted(found_lines.keys()):
+    fn = key.split(":")[0]
+    if fn != kept_fn:
+      _color.ref("yellow", fn, os.path.abspath(fn))
+      kept_fn = fn
+    print_good_line(found_lines[key])
 
 def skip_from_file(filename):
   (skip_dir, skip_ext) = ([], [])
@@ -464,23 +475,8 @@ if __name__ == '__main__':
       print "Unknown scope: %s" % kind
       usage()
 
-    """ Hacks, move it off loop """
-    scope_txt = '\t%s\t' % scope
-    ident_re = re.compile(ident, _arg_re_flags)
-
     try:
-      with open(args[0], "r") as tagf:
-        for ln in tagf:
-          (tagname, srcfile, tagpattern, lineno) = parse_tag_line(ln, scope_txt, ident)
-          if tagname != None:
-            if lineno != None:
-              good_lines = lineno_file(srcfile, lineno)
-            else:
-              tag_re = re.compile(tagpattern)
-              good_lines = grep_file(srcfile, tag_re)
-            if len(good_lines) > 0:
-              _color.prn("yellow", srcfile)
-              print_good_lines(good_lines)
+      do_ctags(args[0], scope, ident)
     except IOError as ex:
       print "Unable to open tagfile (%s)" % str(ex)
 
