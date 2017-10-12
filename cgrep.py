@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import os
@@ -8,6 +8,8 @@ import signal
 
 import re
 import fnmatch
+
+VERSION = "3.001 2017-10-12"
 
 HELP = """
   Advanced grep tool that can:
@@ -20,9 +22,11 @@ HELP = """
 
   scoped find (ctags support)
     cgrep -t filename.tag scope:pattern
+    (where scope: p - prototype, f - function, c - class, s - struct, m - member, t - type)
 
   Tips:
-    Build tag file: find . -name "*.[ch]" | ctags -L - -f tagfile
+    Build tag file:
+      ctags -R --c++-types=+px --extra=+q --excmd=pattern --exclude=Makefile --exclude=.tags -f .tags
     Overwrite default skip: ~/.cgrep_skip.txt or ~/.config/cgrep/skip.txt
       skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
       skip_ext = [".bin", ".o", ".obj", ".class", ".so"]
@@ -54,6 +58,8 @@ _extra_skip_ext = []
 _extra_skip_re = []
 _out_fd = None
 _html_output = False
+
+known_scopes_ = ["p","f","c","s","m","t"]
 
 """ Fancy printing """
 class Color(object):
@@ -172,11 +178,11 @@ def lineno_file(filename, lineno):
         good_ln = _color.cl("green") + ln + _color.cl("/")
         if _arg_context:
           good_lines.append(kp)
-          good_lines.append((line_count, good_ln))
-          good_lines.append((line_count + 1, next(fd, '')))
+          good_lines.append((line_count, good_ln, "", ""))
+          good_lines.append((line_count + 1, next(fd, ''), "", ""))
         else:
           good_lines.append((line_count, good_ln))
-      kp = (line_count, ln[:-1])
+      kp = (line_count, ln[:-1], "", "")
   return good_lines
 
 def grep_file(filename, pattern):
@@ -204,6 +210,15 @@ def grep_file(filename, pattern):
       kp = (line_count, ln[:-1], "", "")
   return good_lines
 
+def print_good_lines(good_lines):
+  for (n, a, b, c) in good_lines:
+    if b != "" or c != "":
+      _color.prn("default", "%4d: %s" % (n, a), False)
+      _color.prn("green", b, False)
+      _color.prn("default", c, True)
+    else:
+      _color.prn("default", "%4d: %s" % (n, a))
+
 def do_grep(filepattern, textpattern, dirname):
   for root, dirs, files in os.walk(dirname, topdown=True):
     for name in dirs:
@@ -223,14 +238,7 @@ def do_grep(filepattern, textpattern, dirname):
           good_lines = grep_file(fn, textpattern)
           if len(good_lines) > 0:
             _color.ref("yellow", fn, os.path.abspath(fn))
-            for (n, a, b, c) in good_lines:
-              if b != "" or c != "":
-                _color.prn("default", "%4d: %s" % (n, a), False)
-                _color.prn("green", b, False)
-                _color.prn("default", c, True)
-              else: 
-                _color.prn("default", "%4d: %s" % (n, a))
-                
+            print_good_lines(good_lines)
         except Exception as e:
           print _color.cl("magenta", fn), e
 
@@ -256,8 +264,8 @@ def do_glob(pattern, dirname):
         if not should_skip_file(name):
           _color.prn("default", fn)
 
-def parse_tag_line(ln, kind, ident):
-  if ln.find(kind) == -1:
+def parse_tag_line(ln, scope, ident):
+  if ln.find(scope) == -1:
     """ Kind quick check it shopuld be prepared ';"\t'+kind"""
     return (None, None, None, None)
 
@@ -448,29 +456,34 @@ if __name__ == '__main__':
 
   elif _search_kind == "tags":
     """ args should be tagfile filepattern - mytags.tag f:main"""
-    if len(args) != 2:
+    if len(args) != 2 or args[1].find(":") == -1:
       usage()
 
-    (kind, ident) = args[1].split(":")
+    (scope, ident) = args[1].split(":")
+    if scope not in known_scopes_:
+      print "Unknown scope: %s" % kind
+      usage()
+
     """ Hacks, move it off loop """
-    kind = ';"\t' + kind
+    scope_txt = '\t%s\t' % scope
     ident_re = re.compile(ident, _arg_re_flags)
 
-    with open(args[0], "r") as tagf:
-      for ln in tagf:
-        (tagname, srcfile, tagpattern, lineno) = parse_tag_line(ln, kind, ident)
-        if tagname != None:
-          if lineno != None:
-            good_lines = lineno_file(srcfile, lineno)
-          else:
-            # print "%d:/%s/" % (line_count, tagpattern)
-            tag_re = re.compile(tagpattern)
-            good_lines = grep_file(srcfile, tag_re)
+    try:
+      with open(args[0], "r") as tagf:
+        for ln in tagf:
+          (tagname, srcfile, tagpattern, lineno) = parse_tag_line(ln, scope_txt, ident)
+          if tagname != None:
+            if lineno != None:
+              good_lines = lineno_file(srcfile, lineno)
+            else:
+              tag_re = re.compile(tagpattern)
+              good_lines = grep_file(srcfile, tag_re)
+            if len(good_lines) > 0:
+              _color.prn("yellow", srcfile)
+              print_good_lines(good_lines)
+    except IOError as ex:
+      print "Unable to open tagfile (%s)" % str(ex)
 
-          if len(good_lines) > 0:
-            _color.prn("yellow", srcfile)
-            for (n, l) in good_lines:
-              _color.prn("default", "%4d: %s" % (n, l))
   else:
     fatal("No search kind specified should be either -e (grep) or -g (glob)")
     sys.exit(7)
