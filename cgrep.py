@@ -322,7 +322,6 @@ if __name__ == '__main__':
 
   for o, a in opts:
     if o in ("-c", "--color"):
-      """Use ansy color on printing"""
       _color.toggle()
     elif o in ("-e", "--grep"):
       _search_kind = "grep"
@@ -331,7 +330,6 @@ if __name__ == '__main__':
     elif o in ("-t", "--tags"):
       _search_kind = "tags"
     elif o in ("-x", "--exclude"):
-      """ List of additional filemask to filter out """
       _extra_skip += a.split(":")
     elif o in ("-d", "--dirsonly"): 
       _arg_dirsonly = True
@@ -344,7 +342,6 @@ if __name__ == '__main__':
     elif o in ("-u", "--context"):
       _arg_context = True
     elif o in ("-o", "--output"):
-      """ Redirect all output to a file """
       _arg_outfile = a
     elif o in ("-h", "--help"):
       usage()
