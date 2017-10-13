@@ -34,10 +34,15 @@ HELP = """
 
 
 """ Parameters """
-_skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
-_skip_ext = [".bin", ".o", ".obj", ".class", ".so", ".dynlib", ".dll", ".zip", ".jar", ".gz", ".gch", ".pch", ".pdb", ".swp", ".jpg", ".ttf"]
-_skip_files = [".cgrep_skip.txt", "~/.cgrep_skip.txt", "~/.config/cgrep/skip.txt"]
-_skip_fullfilename = []
+_dirs_to_skip = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
+_files_to_skip = ["*.bin", "*.o", "*.obj", "*.class", "*.so", "*.dynlib", "*.dll",
+              "*.zip", "*.jar", "*.gz",
+              "*.gch", "*.pch", "*.pdb", "*.swp",
+              "*.jpg", "*.ttf"]
+
+_extra_skip = []
+
+_skip_files = [".cgrepignore", "~/.cgrepignore", "~/.config/cgrep/ignore"]
 
 _max_line_part = 40
 
@@ -53,9 +58,6 @@ _arg_outfile = None
 
 _search_kind = "grep"
 
-_extra_skip_dir = []
-_extra_skip_ext = []
-_extra_skip_re = []
 _out_fd = None
 _html_output = False
 
@@ -67,7 +69,7 @@ class Color(object):
   ANSI_COLORS = {"default" : 0, "black" : 30, "red" : 31, "green" : 32,
                  "yellow" : 33, "blue" : 34, "magenta" : 35, "cyan" : 36,
                  "white" : 37}
-  
+
   HTML_COLORS = {"default" : "", "black" : "#000000", "red" : "#aa0000", "green" : "#00aa00",
                  "yellow" : "#aaaa00", "blue" : "#0000aa", "magenta" : "#aa00aa", "cyan" : "#00aaaa",
                  "white" : "#ffffff"}
@@ -111,7 +113,7 @@ class Color(object):
     if need_eol:
       return "<br />\n"
     return ""
- 
+
   def prn(self, color, msg, need_eol = True):
     if _out_fd != None:
       if _html_output:
@@ -119,7 +121,7 @@ class Color(object):
       else:
         _out_fd.write(msg + self.eol(need_eol))
     sys.stdout.write(self.cl(color, msg) + self.eol(need_eol))
-      
+
   def ref(self, color, msg, filename):
     if _out_fd != None:
       if _html_output:
@@ -130,42 +132,23 @@ class Color(object):
 
 _color = Color()
 
-def should_skip_dir(dirname):
-  """ Check additional skip conditions """
-  if _arg_no_skip:
-    return (False, None)
-
-  if dirname in _skip_dir:
-    """ Hardcoded skip, we need not to print extra information about """
-    return (True, None)
-
-  for dn in _extra_skip_dir:
-    if dirname.find(dn) != -1:
-      """ Soft skip, warn, because it can cause information miss """
-      return (True, dn)
-
-  for (rere, restr) in _extra_skip_re:
-    if rere.match(dirname):
-      return (True, restr)
-  return (False, None)
-
-def should_skip_file(filename):
+def should_skip(name, skip_list):
   """ Check additional skip conditions """
   if _arg_no_skip:
     return False
 
-  if len(_skip_fullfilename) > 0:
-    fullfilename = os.path.join(os.getcwd(), filename)
-    if fullfilename in _skip_fullfilename:
-      return True
- 
-  (fname, ext) = os.path.splitext(filename) #pylint: disable=unused-variable
-  if ext in _skip_ext:
+  """ Hardcoded skip, exact match """
+  if name in skip_list:
     return True
 
-  if ext in _extra_skip_ext:
-    return True
-  return False
+  matched = filter(lambda x: fnmatch.fnmatch(name, x), _extra_skip)
+  return len(matched) > 0
+
+def should_skip_dir(dirname):
+  return should_skip(dirname, _dirs_to_skip)
+
+def should_skip_file(filename):
+  return should_skip(filename, _files_to_skip)
 
 def grep_file(filename, pattern):
   line_count = 0
@@ -205,17 +188,18 @@ def print_good_line(good_line):
 def do_grep(filepattern, textpattern, dirname):
   for root, dirs, files in os.walk(dirname, topdown=True):
     for name in dirs:
-      fn = os.path.join(root, name)
-      (flag, text) = should_skip_dir(name)
-      if flag:
+      if should_skip_dir(name):
         dirs.remove(name)
-        if text != None and _arg_warn_skip:
-          _color.ref("magenta", "Skipped (%s) %s " % (text, fn), os.path.abspath(fn))
+        if _arg_warn_skip:
+          _color.prn("magenta", "Skipped %s" % name)
         continue
+      fn = os.path.join(root, name)
     for name in files:
       if filepattern.search(name):
         fn = os.path.join(root, name)
         if should_skip_file(name):
+          if _arg_warn_skip:
+            _color.prn("magenta", "Skipped %s " % fn)
           continue
         try:
           good_lines = grep_file(fn, textpattern)
@@ -231,11 +215,10 @@ def do_glob(pattern, dirname):
   for root, dirs, files in os.walk(dirname, topdown=True):
     for name in dirs:
       fn = os.path.join(root, name)
-      (flag, text) = should_skip_dir(name)
-      if flag:
+      if should_skip_dir(name):
         dirs.remove(name)
-        if text != None and _arg_warn_skip:
-          _color.prn("magenta", "Skipped [%s] %s" % (text, fn))
+        if _arg_warn_skip:
+          _color.prn("magenta", "Skipped %s" % fn)
         continue
       if pattern.search(name):
         _color.prn("yellow", fn)
@@ -300,20 +283,6 @@ def do_ctags(tagfile, scope, ident):
       kept_fn = fn
     print_good_line(found_lines[key])
 
-def skip_from_file(filename):
-  (skip_dir, skip_ext) = ([], [])
-  with open(filename,'r') as inf:
-    data = inf.read()
-
-  m = re.search("skip_dir[ \t]*=[ \t]*(\[.*\])", data)
-  if m is not None:
-    skip_dir = eval(m.group(1))
-
-  m = re.search("skip_ext[ \t]*=[ \t]*(\[.*\])", data)
-  if m is not None:
-    skip_ext = eval(m.group(1))
-  return (skip_dir, skip_ext)
-
 """ Support function """
 def fatal(msg, e=None):
   s = " (%s)" % str(e) if e != None else ""
@@ -362,10 +331,8 @@ if __name__ == '__main__':
     elif o in ("-t", "--tags"):
       _search_kind = "tags"
     elif o in ("-x", "--exclude"):
-      """ List of additional extensions and/or directories to filter out
-          test:build:/.*class/:.back
-      """
-      extra_skip += a.split(":")
+      """ List of additional filemask to filter out """
+      _extra_skip += a.split(":")
     elif o in ("-d", "--dirsonly"): 
       _arg_dirsonly = True
     elif o in ("-i", "--ignorecase"):
@@ -388,29 +355,12 @@ if __name__ == '__main__':
     usage()
 
   """ Read skip from file """
-  (fskip_dir, fskip_ext) = ([], [])
   for fn in _skip_files:
     fns = os.path.expanduser(fn)
     if os.path.exists(fns):
-      (skip_dir, skip_ext) = skip_from_file(fns)
-      fskip_dir += skip_dir
-      fskip_ext += skip_ext
-
-  """ Override defaults if skiplist we read from files is not empty """
-  if len(fskip_dir) > 0:
-    _skip_dir = list(set(fskip_dir))
-  if len(fskip_ext) > 0:
-    _skip_ext = list(set(fskip_ext))
-
-  """ Pre-process extra skip """
-  for n in extra_skip:
-    if n[0] == '.':
-      _extra_skip_ext.append(n)
-    elif n[0] == '/':
-      assert n[-1] == '/', "bad regex"
-      _extra_skip_re.append((re.compile(n[1:-1]), n[1:-1]))
-    else:
-      _extra_skip_dir.append(n)
+      with open(fns, "r") as ifd:
+        for ln in ifd:
+          _extra_skip.append(ln[:-1])
 
   filepat = None
   textpat = None
