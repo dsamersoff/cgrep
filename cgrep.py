@@ -27,9 +27,7 @@ HELP = """
   Tips:
     Build tag file:
       ctags -R --c++-types=+px --extra=+q --excmd=pattern --exclude=Makefile --exclude=.tags -f .tags
-    Overwrite default skip: ~/.cgrep_skip.txt or ~/.config/cgrep/skip.txt
-      skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
-      skip_ext = [".bin", ".o", ".obj", ".class", ".so"]
+    Use files to add more items to default skip: .cgrepignore ~/.cgrepignore or ~/.config/cgrep/ignore
 """
 
 
