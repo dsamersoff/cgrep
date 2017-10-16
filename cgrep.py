@@ -22,7 +22,7 @@ HELP = """
 
   scoped find (ctags support)
     cgrep -t filename.tag scope:pattern
-    (where scope: p - prototype, f - function, c - class, s - struct, m - member, t - type)
+    (.tags used by default, scope: p - prototype, f - function, c - class, s - struct, m - member, t - type)
 
   Tips:
     Build tag file:
@@ -62,6 +62,7 @@ _out_fd = None
 _html_output = False
 
 known_scopes_ = ["p","f","c","s","m","t"]
+default_tagfile_ = ".tags"
 
 """ Fancy printing """
 class Color(object):
@@ -267,7 +268,7 @@ def do_ctags(tagfile, scope, ident):
   ident_re = re.compile(ident, _arg_re_flags)
   found_lines = dict()
 
-  with open(args[0], "r") as tagf:
+  with open(tagfile, "r") as tagf:
     for ln in tagf:
       (tagname, srcfile, tag_re) = parse_tag_line(ln, scope, ident_re)
       if tagname != None:
@@ -414,16 +415,23 @@ if __name__ == '__main__':
 
   elif _search_kind == "tags":
     """ args should be tagfile filepattern - mytags.tag f:main"""
-    if len(args) != 2 or args[1].find(":") == -1:
+    if len(args) == 1:
+       (tagfile, search) = (default_tagfile_, args[0])
+    elif len(args) == 2:
+       (tagfile, search) = (args[0], args[1])
+    else:
       usage()
 
-    (scope, ident) = args[1].split(":")
+    if search.find(":") == -1:
+      usage()
+
+    (scope, ident) = search.split(":")
     if scope not in known_scopes_:
       print "Unknown scope: %s" % kind
       usage()
 
     try:
-      do_ctags(args[0], scope, ident)
+      do_ctags(tagfile, scope, ident)
     except IOError as ex:
       print "Unable to open tagfile (%s)" % str(ex)
 
