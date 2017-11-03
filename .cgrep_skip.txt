@@ -1,2 +1,0 @@
-skip_dir = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
-skip_ext = [".plu", ".huyu"]
