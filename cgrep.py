@@ -36,7 +36,7 @@ HELP = """
 
 """ Parameters """
 _dirs_to_skip = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
-_files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll",
+_files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll", "*.a",
                   "*.o", "*.obj", "*.class",
                   "*.zip", "*.jar", "*.gz",
                   "*.gch", "*.pch", "*.pdb", "*.swp",
@@ -75,6 +75,9 @@ def report_exception(msg, ex):
 
 def open_file(filename):
   return codecs.open(filename, "r", "utf_8_sig", errors='ignore')
+
+def open_file_w(filename):
+  return codecs.open(filename, "w", "utf_8_sig", errors='ignore')
 
 """ Fancy printing """
 class Color(object):
@@ -135,6 +138,9 @@ class Color(object):
         _out_fd.write(msg + self.eol(need_eol))
     sys.stdout.write(self.cl(color, msg) + self.eol(need_eol))
 
+  def prncon(self, color, msg, need_eol = True):
+    sys.stdout.write(self.cl(color, msg) + self.eol(need_eol))
+
   def ref(self, color, msg, filename):
     if _out_fd != None:
       if _html_output:
@@ -149,10 +155,6 @@ def should_skip(name, skip_list):
   """ Check additional skip conditions """
   if _arg_no_skip:
     return False
-
-  """ Hardcoded skip, exact match """
-  if name in skip_list:
-    return True
 
   """ Hardcoded skip, shell pattern match """
   matched = [x for x in skip_list if fnmatch.fnmatch(name, x)]
@@ -209,7 +211,7 @@ def do_grep(filepattern, textpattern, dirname):
       if should_skip_dir(name):
         dirs.remove(name)
         if _arg_warn_skip:
-          _color.prn("magenta", "Skipped %s" % name)
+          _color.prncon("magenta", "Skipped %s" % name)
         continue
       fn = os.path.join(root, name)
     for name in files:
@@ -217,7 +219,7 @@ def do_grep(filepattern, textpattern, dirname):
         fn = os.path.join(root, name)
         if should_skip_file(name):
           if _arg_warn_skip:
-            _color.prn("magenta", "Skipped %s " % fn)
+            _color.prncon("magenta", "Skipped %s " % fn)
           continue
         try:
           good_lines = grep_file(fn, textpattern)
@@ -236,7 +238,7 @@ def do_glob(pattern, dirname):
       if should_skip_dir(name):
         dirs.remove(name)
         if _arg_warn_skip:
-          _color.prn("magenta", "Skipped %s" % fn)
+          _color.prncon("magenta", "Skipped %s" % fn)
         continue
       if pattern.search(name):
         _color.prn("yellow", fn)
@@ -390,15 +392,18 @@ if __name__ == '__main__':
   textpat = None
   
   if _arg_outfile != None:
-    """ Redirect all output to file. Rely on OS to close it """
+    """ Redirect all output to file. Rely on OS to close it,
+        append the file to skip list to avoid recursion
+    """
     _arg_outfile = os.path.abspath(_arg_outfile)
-    _skip_fullfilename.append(_arg_outfile)
+    _files_to_skip.append(_arg_outfile)
     
-    _out_fd = file(_arg_outfile, "w")
+    _out_fd = open_file_w(_arg_outfile)
     
-    """ Enable color output in html format if outfile have html ext """
+    """ Enable html output if outfile have html ext """
     lw_outfile = _arg_outfile.lower()
     if lw_outfile.endswith(".html") or lw_outfile.endswith(".htm"):
+       """ TODO: Write correct html header """
       _html_output = True
 
   if _search_kind == "grep":
