@@ -5,6 +5,7 @@ import os
 import sys
 import getopt
 import signal
+import traceback
 
 import re
 import fnmatch
@@ -51,6 +52,7 @@ _arg_warn_skip = True
 _arg_no_skip = False
 _arg_context = False
 _arg_outfile = None
+_arg_debug_cgrep = False
 
 """ global varables """
 
@@ -61,6 +63,11 @@ _html_output = False
 
 known_scopes_ = ["p","f","c","s","m","t"]
 default_tagfile_ = ".tags"
+
+def report_exception(msg, ex):
+  print _color.cl("magenta", msg + "(%s)" % str(ex))
+  if _arg_debug_cgrep:
+    print traceback.format_exc()
 
 """ Fancy printing """
 class Color(object):
@@ -206,8 +213,8 @@ def do_grep(filepattern, textpattern, dirname):
             _color.ref("yellow", fn, os.path.abspath(fn))
             for good_line in good_lines:
               print_good_line(good_line)
-        except Exception as e:
-          print _color.cl("magenta", fn), e
+        except Exception as ex:
+          report_exception(fn, ex)
 
 """ filename search """
 def do_glob(pattern, dirname):
@@ -238,7 +245,7 @@ def parse_tag_line(p_ln, p_scope, p_ident_re):
   try:
     (tagname, srcfile, tagpattern, scope) = p_ln.split("\t", 3)
   except ValueError as ex:
-    print "CTAGS line format error: '%s'" % ln
+    report_exception("CTAGS line format error: '%s'" % ln, ex)
     return (None, None, None)
 
   scope = scope[0]
@@ -257,7 +264,7 @@ def parse_tag_line(p_ln, p_scope, p_ident_re):
   try:
     tag_re = re.compile(tagpattern[1:-3])
   except Exception as ex:
-    print "CTAGS re format error: '%s'" % tagpattern
+    report_exception("CTAGS re format error: '%s'" % tagpattern, ex)
     return (None, None, None)
 
   return (tagname, srcfile, tag_re)
@@ -308,10 +315,10 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                               "hcegdisSux:to:",
-                               ["help", "color", "grep", "glob", "dirsonly", "ignorecase", "warnskip", "noskip", "context", "exclude", "tags", "output"])
-  except getopt.GetoptError as err:
-    print str(err)
+                               "hcegdisSux:to:D",
+                               ["help", "color", "grep", "glob", "dirsonly", "ignorecase", "warnskip", "noskip", "context", "exclude", "tags", "output", "debug"])
+  except getopt.GetoptError as ex:
+    report_exception("GetoptError", ex)
     usage()
 
   extra_skip = list()
@@ -342,6 +349,8 @@ if __name__ == '__main__':
       _arg_context = True
     elif o in ("-o", "--output"):
       _arg_outfile = a
+    elif o in ("-D", "--debug"):
+      _arg_debug_cgrep = True
     elif o in ("-h", "--help"):
       usage()
     else:
@@ -431,7 +440,7 @@ if __name__ == '__main__':
     try:
       do_ctags(tagfile, scope, ident)
     except IOError as ex:
-      print "Unable to open tagfile (%s)" % str(ex)
+      report_exception("Unable to open tagfile '%s'" % tagfile, ex)
 
   else:
     fatal("No search kind specified should be either -e (grep) or -g (glob)")
