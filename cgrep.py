@@ -6,6 +6,8 @@ import sys
 import getopt
 import signal
 import traceback
+import codecs
+import locale
 
 import re
 import fnmatch
@@ -34,10 +36,11 @@ HELP = """
 
 """ Parameters """
 _dirs_to_skip = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
-_files_to_skip = ["*.bin", "*.o", "*.obj", "*.class", "*.so", "*.dynlib", "*.dll",
-              "*.zip", "*.jar", "*.gz",
-              "*.gch", "*.pch", "*.pdb", "*.swp",
-              "*.jpg", "*.ttf"]
+_files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll",
+                  "*.o", "*.obj", "*.class",
+                  "*.zip", "*.jar", "*.gz",
+                  "*.gch", "*.pch", "*.pdb", "*.swp",
+                  "*.jpg", "*.ttf"]
 
 _extra_skip = []
 
@@ -65,9 +68,13 @@ known_scopes_ = ["p","f","c","s","m","t"]
 default_tagfile_ = ".tags"
 
 def report_exception(msg, ex):
-  print _color.cl("magenta", msg + "(%s)" % str(ex))
+  """ Report exception if requiested """
+  print(_color.cl("magenta", msg + "(%s)" % str(ex)))
   if _arg_debug_cgrep:
-    print traceback.format_exc()
+    print(traceback.format_exc())
+
+def open_file(filename):
+  return codecs.open(filename, "r", "utf_8_sig", errors='ignore')
 
 """ Fancy printing """
 class Color(object):
@@ -134,7 +141,7 @@ class Color(object):
         _out_fd.write("""<A href="%s">%s</A><BR />\n""" % (filename, self.html(color, msg)))
       else:
         _out_fd.write(msg + "\n")
-    print (self.cl(color, msg))
+    print(self.cl(color, msg))
 
 _color = Color()
 
@@ -147,7 +154,12 @@ def should_skip(name, skip_list):
   if name in skip_list:
     return True
 
-  matched = filter(lambda x: fnmatch.fnmatch(name, x), _extra_skip)
+  """ Hardcoded skip, shell pattern match """
+  matched = [x for x in skip_list if fnmatch.fnmatch(name, x)]
+  if len(matched) > 0:
+    return True
+
+  matched = [x for x in _extra_skip if fnmatch.fnmatch(name, x)]
   return len(matched) > 0
 
 def should_skip_dir(dirname):
@@ -160,7 +172,7 @@ def grep_file(filename, pattern):
   line_count = 0
   good_lines = []
   kp = (0, "", "", "")
-  with open(filename, "r") as fd:
+  with open_file(filename) as fd:
     for ln in fd:
       line_count += 1
       m = pattern.search(ln)
@@ -273,7 +285,7 @@ def do_ctags(tagfile, scope, ident):
   ident_re = re.compile(ident, _arg_re_flags)
   found_lines = dict()
 
-  with open(tagfile, "r") as tagf:
+  with open_file(tagfile) as tagf:
     for ln in tagf:
       (tagname, srcfile, tag_re) = parse_tag_line(ln, scope, ident_re)
       if tagname != None:
@@ -292,11 +304,11 @@ def do_ctags(tagfile, scope, ident):
 """ Support function """
 def fatal(msg, e=None):
   s = " (%s)" % str(e) if e != None else ""
-  print _color.cl("red", msg + s)
+  print(_color.cl("red", msg + s))
   sys.exit(-1)
 
 def usage():
-  print HELP
+  print(HELP)
   sys.exit(7)
 
 def signal_handler(signal, frame): #pylint: disable=unused-argument
@@ -306,7 +318,19 @@ def signal_handler(signal, frame): #pylint: disable=unused-argument
 if __name__ == '__main__':
   """ set ctrl-C handler and reopen stdout unbuffered """
   signal.signal(signal.SIGINT, signal_handler)
-  sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+  if sys.stdout.isatty():
+    if sys.version_info[0] == 2:
+      """ python3 doesn't support 0 parameter of fdopen """
+      """ TODO: find better solution """
+      sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+    if os.name == 'nt':
+      """ Disable color output on windows by default """
+      _color.disable()
+  else:
+    """ output is redirected, disale colors and leave stdout as it is """
+    _color.disable()
+
+  extra_skip = list()
 
   if os.path.basename(sys.argv[0]) == "cgrep":
     _search_kind = 'grep'
@@ -320,11 +344,6 @@ if __name__ == '__main__':
   except getopt.GetoptError as ex:
     report_exception("GetoptError", ex)
     usage()
-
-  extra_skip = list()
-  if os.name == 'nt':
-    """ Disable color output on windows by default """
-    _color.disable()
 
   for o, a in opts:
     if o in ("-c", "--color"):
@@ -363,7 +382,7 @@ if __name__ == '__main__':
   for fn in _skip_files:
     fns = os.path.expanduser(fn)
     if os.path.exists(fns):
-      with open(fns, "r") as ifd:
+      with open_file(fns) as ifd:
         for ln in ifd:
           _extra_skip.append(ln[:-1])
 
@@ -434,7 +453,7 @@ if __name__ == '__main__':
 
     (scope, ident) = search.split(":")
     if scope not in known_scopes_:
-      print "Unknown scope: %s" % kind
+      print("Unknown scope: %s" % kind)
       usage()
 
     try:
