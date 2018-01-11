@@ -51,7 +51,7 @@ _max_line_part = 40
 _arg_re_flags = 0
 _arg_dirsonly = False
 _arg_word = False
-_arg_warn_skip = True
+_arg_warn_skip = False
 _arg_no_skip = False
 _arg_context = False
 _arg_outfile = None
@@ -363,7 +363,7 @@ if __name__ == '__main__':
     elif o in ("-i", "--ignorecase"):
       _arg_re_flags |= re.IGNORECASE
     elif o in ("-s", "--warnskip"):
-      _arg_warn_skip = False
+      _arg_warn_skip = True
     elif o in ("-S", "--noskip"):
       _arg_no_skip = True
     elif o in ("-u", "--context"):
