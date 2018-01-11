@@ -403,7 +403,7 @@ if __name__ == '__main__':
     """ Enable html output if outfile have html ext """
     lw_outfile = _arg_outfile.lower()
     if lw_outfile.endswith(".html") or lw_outfile.endswith(".htm"):
-       """ TODO: Write correct html header """
+      """ TODO: Write correct html header """
       _html_output = True
 
   if _search_kind == "grep":
