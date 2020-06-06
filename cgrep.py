@@ -377,6 +377,7 @@ if __name__ == '__main__':
     else:
       assert False, "unhandled option"
 
+  """ Validate input parameters """
   if len(args) == 0:
     usage()
 
@@ -401,8 +402,8 @@ if __name__ == '__main__':
     _out_fd = open_file_w(_arg_outfile)
     
     """ Enable html output if outfile have html ext """
-    lw_outfile = _arg_outfile.lower()
-    if lw_outfile.endswith(".html") or lw_outfile.endswith(".htm"):
+    (filename, ext) = os.path.splitext(_arg_outfile)
+    if ext.lower() in [".html", ".htm"]:
       """ TODO: Write correct html header """
       _html_output = True
 
@@ -437,8 +438,7 @@ if __name__ == '__main__':
       """ /re/ enforce re instead of glob """
       pat = pat[1:-1]
     else:
-      p = fnmatch.translate(pat)
-      pat = p[:-7] # strip \Z(?ms)
+      pat = fnmatch.translate(pat)
 
     filepat = re.compile(pat, _arg_re_flags)
     for d in args[1:]:
@@ -465,9 +465,5 @@ if __name__ == '__main__':
       do_ctags(tagfile, scope, ident)
     except IOError as ex:
       report_exception("Unable to open tagfile '%s'" % tagfile, ex)
-
-  else:
-    fatal("No search kind specified should be either -e (grep) or -g (glob)")
-    sys.exit(7)
 
   sys.exit(0)
