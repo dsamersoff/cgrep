@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -12,7 +12,7 @@ import locale
 import re
 import fnmatch
 
-VERSION = "3.001 2017-10-12"
+VERSION = "4.002 2020-06-24"
 
 HELP = """
   Advanced grep tool that can:
@@ -33,14 +33,13 @@ HELP = """
     Use files to add more items to default skip: .cgrepignore ~/.cgrepignore or ~/.config/cgrep/ignore
 """
 
-
 """ Parameters """
 _dirs_to_skip = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
 _files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll", "*.a",
                   "*.o", "*.obj", "*.class",
                   "*.zip", "*.jar", "*.gz",
-                  "*.gch", "*.pch", "*.pdb", "*.swp",
-                  "*.jpg", "*.ttf"]
+                  "*.gch", "*.pch", "*.pdb", "*.swp", "*.icu",
+                  "*.jpg", "*.ttf", "*.gif", "*png", "*.tiff", "*.ico"]
 
 _extra_skip = []
 
@@ -62,22 +61,19 @@ _arg_debug_cgrep = False
 _search_kind = "grep"
 
 _out_fd = None
-_html_output = False
 
-known_scopes_ = ["p","f","c","s","m","t"]
-default_tagfile_ = ".tags"
+_known_scopes = ["p","f","c","s","m","t"]
+_default_tagfile = ".tags"
 
 def report_exception(msg, ex):
-  """ Report exception if requiested """
+  """ Report exception """
   print(_color.cl("magenta", msg + "(%s)" % str(ex)))
   if _arg_debug_cgrep:
     print(traceback.format_exc())
 
-def open_file(filename):
-  return codecs.open(filename, "r", "utf_8_sig", errors='ignore')
-
-def open_file_w(filename):
-  return codecs.open(filename, "w", "utf_8_sig", errors='ignore')
+def open_uf(filename, mode):
+  """ Open text file with encoding support """
+  return codecs.open(filename, mode, "utf_8_sig", errors='ignore')
 
 """ Fancy printing """
 class Color(object):
@@ -85,10 +81,6 @@ class Color(object):
   ANSI_COLORS = {"default" : 0, "black" : 30, "red" : 31, "green" : 32,
                  "yellow" : 33, "blue" : 34, "magenta" : 35, "cyan" : 36,
                  "white" : 37}
-
-  HTML_COLORS = {"default" : "", "black" : "#000000", "red" : "#aa0000", "green" : "#00aa00",
-                 "yellow" : "#aaaa00", "blue" : "#0000aa", "magenta" : "#aa00aa", "cyan" : "#00aaaa",
-                 "white" : "#ffffff"}
 
   def __init__(self):
     self.enabled = True
@@ -111,31 +103,14 @@ class Color(object):
 
     return "\033[%dm" % Color.ANSI_COLORS[color]
   
-  def html(self, color, msg):
-    if color is None or color == "/":
-      return "</FONT>"
-
-    if msg != "":
-      return "<FONT color='%s'>%s</FONT>" % (Color.HTML_COLORS[color], msg.replace(" ", "&nbsp;"))
-
-    return "<FONT color='%s'>" % Color.HTML_COLORS[color]
- 
   def eol(self, need_eol):
     if need_eol:
       return "\n"
     return ""
 
-  def html_eol(self, need_eol):
-    if need_eol:
-      return "<br />\n"
-    return ""
-
   def prn(self, color, msg, need_eol = True):
     if _out_fd != None:
-      if _html_output:
-        _out_fd.write(self.html(color, msg) + self.html_eol(need_eol)) 
-      else:
-        _out_fd.write(msg + self.eol(need_eol))
+      _out_fd.write(msg + self.eol(need_eol))
     sys.stdout.write(self.cl(color, msg) + self.eol(need_eol))
 
   def prncon(self, color, msg, need_eol = True):
@@ -143,11 +118,8 @@ class Color(object):
 
   def ref(self, color, msg, filename):
     if _out_fd != None:
-      if _html_output:
-        _out_fd.write("""<A href="%s">%s</A><BR />\n""" % (filename, self.html(color, msg)))
-      else:
         _out_fd.write(msg + "\n")
-    print(self.cl(color, msg))
+    sys.stdout.write(self.cl(color, msg) + "\n")
 
 _color = Color()
 
@@ -174,7 +146,7 @@ def grep_file(filename, pattern):
   line_count = 0
   good_lines = []
   kp = (0, "", "", "")
-  with open_file(filename) as fd:
+  with open_uf(filename, "r") as fd:
     for ln in fd:
       line_count += 1
       m = pattern.search(ln)
@@ -251,6 +223,7 @@ def do_glob(pattern, dirname):
         if not should_skip_file(name):
           _color.prn("default", fn)
 
+""" Tagged search """
 def parse_tag_line(p_ln, p_scope, p_ident_re):
   if p_ln.startswith("!"):
     """ Skip comments """
@@ -287,7 +260,7 @@ def do_ctags(tagfile, scope, ident):
   ident_re = re.compile(ident, _arg_re_flags)
   found_lines = dict()
 
-  with open_file(tagfile) as tagf:
+  with open_uf(tagfile, "r") as tagf:
     for ln in tagf:
       (tagname, srcfile, tag_re) = parse_tag_line(ln, scope, ident_re)
       if tagname != None:
@@ -320,24 +293,11 @@ def signal_handler(signal, frame): #pylint: disable=unused-argument
 if __name__ == '__main__':
   """ set ctrl-C handler and reopen stdout unbuffered """
   signal.signal(signal.SIGINT, signal_handler)
-  if sys.stdout.isatty():
-    if sys.version_info[0] == 2:
-      """ python3 doesn't support 0 parameter of fdopen """
-      """ TODO: find better solution """
-      sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
-    if os.name == 'nt':
-      """ Disable color output on windows by default """
-      _color.disable()
-  else:
-    """ output is redirected, disale colors and leave stdout as it is """
+  if not sys.stdout.isatty():
+    """ output is redirected, disable colors """
     _color.disable()
 
   extra_skip = list()
-
-  if os.path.basename(sys.argv[0]) == "cgrep":
-    _search_kind = 'grep'
-  elif os.path.basename(sys.argv[0]) == "cfind":
-    _search_kind = 'glob'
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
@@ -385,7 +345,7 @@ if __name__ == '__main__':
   for fn in _skip_files:
     fns = os.path.expanduser(fn)
     if os.path.exists(fns):
-      with open_file(fns) as ifd:
+      with open_uf(fns, "r") as ifd:
         for ln in ifd:
           _extra_skip.append(ln[:-1])
 
@@ -398,34 +358,20 @@ if __name__ == '__main__':
     """
     _arg_outfile = os.path.abspath(_arg_outfile)
     _files_to_skip.append(_arg_outfile)
+    _out_fd = open(_arg_outfile, "w")
     
-    _out_fd = open_file_w(_arg_outfile)
-    
-    """ Enable html output if outfile have html ext """
-    (filename, ext) = os.path.splitext(_arg_outfile)
-    if ext.lower() in [".html", ".htm"]:
-      """ TODO: Write correct html header """
-      _html_output = True
-
   if _search_kind == "grep":
-    """ args should be textpattern filepattern dir1 ... dirN"""
+    """ args should be textpattern filepattern1 filepatternN"""
     if len(args) == 1:
       """ only textpattern present """
       args.append("*")
-    if len(args) == 2 and not os.path.isdir(args[1]):
-      """ dirlist is missed """
-      args.append(".")
-    if len(args) >= 2 and os.path.isdir(args[1]):
-      """ filepattern missed """
-      args.insert(2, "*")
 
     textpat = re.compile(args[0], _arg_re_flags)
 
     """ file pattern is glob and case sensitive """
-    p = fnmatch.translate(args[1])
-    filepat = re.compile(p, 0)
-    for d in args[2:]:
-      do_grep(filepat, textpat, d)
+    for filepat in args[1:]:
+      p = re.compile(fnmatch.translate(filepat))
+      do_grep(p, textpat, ".")
 
   elif _search_kind == "glob":
     """ args should be filepattern dir1 ... dirN"""
@@ -433,37 +379,22 @@ if __name__ == '__main__':
       """ dirlist is missed """
       args.append(".")
 
-    pat = args[0]
-    if pat[0] == '/' and pat[-1] == '/':
-      """ /re/ enforce re instead of glob """
-      pat = pat[1:-1]
-    else:
-      pat = fnmatch.translate(pat)
-
-    filepat = re.compile(pat, _arg_re_flags)
+    filepat = re.compile(fnmatch.translate(args[0]), _arg_re_flags)
     for d in args[1:]:
       do_glob(filepat, d)
 
   elif _search_kind == "tags":
     """ args should be tagfile filepattern - mytags.tag f:main"""
     if len(args) == 1:
-       (tagfile, search) = (default_tagfile_, args[0])
-    elif len(args) == 2:
-       (tagfile, search) = (args[0], args[1])
-    else:
-      usage()
+      args.insert(0, _default_tagfile)
 
-    if search.find(":") == -1:
-      usage()
+    assert len(args) == 1 or len(args) == 2, "Invalid number of arguments"
+    assert args[1].find(":") != -1, "Invalid tag search format %s, should be scope:ident" % args[1]
 
+    (tagfile, search) = (args[0], args[1])
     (scope, ident) = search.split(":")
-    if scope not in known_scopes_:
-      print("Unknown scope: %s" % kind)
-      usage()
 
-    try:
-      do_ctags(tagfile, scope, ident)
-    except IOError as ex:
-      report_exception("Unable to open tagfile '%s'" % tagfile, ex)
+    assert scope in _known_scopes, "Invalid tag search scope %s" % scope
+    do_ctags(tagfile, scope, ident)
 
   sys.exit(0)
