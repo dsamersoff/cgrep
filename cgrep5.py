@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # vim: expandtab shiftwidth=2 softtabstop=2
 
-# version 1.01 2020-04-29
+# version 5.01.01 2020-06-25
 
 _HELP="""
   Advanced grep tool that can:
@@ -68,6 +68,7 @@ _filepat_re = False
 
 """ Globals """
 _out_fd = None 
+_console_fd = sys.stdout
 _output_name = None
 _run_mode_default = True
 
@@ -96,26 +97,32 @@ class Color(object):
   
   @staticmethod
   def prn(color, msg):
+    global _console_fd, _out_fd
     if _out_fd != None:  
       _out_fd.write(msg + "\n")
-    sys.stdout.write(Color.cl(color, msg) + "\n")
+    if _console_fd != None:  
+      _console_fd.write(Color.cl(color, msg) + "\n")
 
   @staticmethod
   def prn_n(color, msg):
+    global _console_fd, _out_fd
     if _out_fd != None:  
       _out_fd.write(msg)
-    sys.stdout.write(Color.cl(color, msg))
+    if _console_fd != None:  
+      _console_fd.write(Color.cl(color, msg))
 ## 
 
 def open_uf(filename, mode):
   """ Open text file with encoding support """
   return codecs.open(filename, mode, "utf_8_sig", errors='ignore')
 
-def report_exception(msg, ex):
+def report_exception(msg, ex, exit_code=None):
   """ Report exception """
   Color.prn("magenta", msg + "(%s)" % str(ex))
   if _verbosity > 3:
-    print(traceback.format_exc())
+    Color.prn("default", traceback.format_exc())
+  if exit_code != None:
+    sys.exit(exit_code)  
 
 def print_good_lines(fn, good_lines):
   """ Print lines that match pattern """
@@ -155,6 +162,7 @@ def filelist_filter(filelist, filepattern):
 def grep_file(filename, pattern):
   """ Grep over the single file, store all matched lines into list"""
   line_count = 0
+  found_count = 0
   good_lines = []
   prev_ln = (line_count, "", "", "")
   with open_uf(filename, "r") as fd:
@@ -162,6 +170,7 @@ def grep_file(filename, pattern):
       line_count += 1
       m = pattern.search(ln)
       if m != None:
+        found_count += 1
         (a, b, c) = (m.string[:m.start(0)], m.string[m.start(0):m.end(0)], m.string[m.end(0):-1])
         if _show_context and line_count > 1:
           good_lines.append(prev_ln)
@@ -169,20 +178,23 @@ def grep_file(filename, pattern):
         if _show_context:
           good_lines.append((line_count + 1, next(fd, ''), "", ""))
       prev_ln = (line_count, ln, "", "")
-  return good_lines
+  return (found_count, good_lines)
 
 def do_grep(filepattern, textpattern, dirname):
   """ grep over the directories """
+  total_found = 0
   for root, dirs, files in os.walk(dirname, topdown=True):
     dirs[:] = dirlist_filter(dirs)
     files[:] = filelist_filter(files, filepattern)
     for fname in files:
       fn = os.path.join(root, fname)
       try:
-        good_lines = grep_file(fn, textpattern)
+        (found, good_lines) = grep_file(fn, textpattern)
+        total_found += found
         print_good_lines(fn, good_lines)
       except Exception as ex:
         report_exception(fn, ex)
+  return total_found      
 
 def do_glob(filepat_re, dirname):
   """ find files that names matches pattern """
@@ -233,8 +245,8 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                                "ho:getiCSDrx:X:",
-                               ["help", "output", "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug",\
+                                "ho:O:getiCSDrx:X:",
+                               ["help", "output", "only-output" "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug",\
                                 "regexp", "exclude", "exclude-override"])
   except getopt.GetoptError as ex:
     usage(ex)
@@ -244,6 +256,9 @@ if __name__ == '__main__':
       usage()
     elif o in ("-o", "--output"):
       _output_name = a
+    elif o in ("-O", "--only-output"):
+      _output_name = a
+      _console_fd = None
     elif o in ("-g", "--glob"):
       assert _run_mode_default, "Run mode already set"
       (_run_mode, _run_mode_default) = (RunMode.GLOB, False)
@@ -272,12 +287,13 @@ if __name__ == '__main__':
     else:
       assert False, "Unhandled option '%s'" % o
 
+
   if not sys.stdout.isatty():
     """ output is redirected, disable colors """
     _colors_enabled = False
 
   if _output_name != None:
-    _out_fd = open(_output_name, "w")
+    _out_fd = open(_output_name, "a")
 
   """ Manage skiplists """
   manage_skip_lists()
@@ -285,34 +301,47 @@ if __name__ == '__main__':
   if _extra_skip != None:
     _files_to_skip += _extra_skip.split(":")
 
-  print ("XXX: ", repr(_files_to_skip))    
-
   if _run_mode == RunMode.GREP:
-    """ args should be textpattern filepattern1 filepatternN
-        file pattern is glob and case sensitive
-    """
-    if len(args) == 1:
-      """ Adding default filepattern if necessary """
-      args.append("*")
+    try:
+      """ args should be textpattern filepattern1 filepatternN
+          file pattern is glob and case sensitive
+      """
+      assert len(args) > 0, "Arguments are required" 
+      if len(args) == 1:
+        """ Adding default filepattern if necessary """
+        args.append("*")
 
-    textpat = re.compile(args[0], _re_flags)
-    for filepat in args[1:]:
-      do_grep(filepat, textpat, ".")
-    sys.exit(0)
-      
+      textpat = re.compile(args[0], _re_flags)
+      found = 0
+      for filepat in args[1:]:
+        found += do_grep(filepat, textpat, ".")
+
+      sys.exit(found)
+    except Exception as ex:
+      report_exception("GREP mode error", ex, -1)
+        
   if _run_mode == RunMode.GLOB:
-    if len(args) == 1:
-      """ Adding default dir if necessary """
-      args.append(".")
+    try:
+      assert len(args) > 0, "Arguments are required" 
+      if len(args) == 1:
+        """ Adding default dir if necessary """
+        args.append(".")
 
-    filepat_re = args[0] if _filepat_re else fnmatch.translate(args[0])  
-    if _verbosity > 3:
-      print("Searching for: r'%s'" % filepat_re)  
+      filepat_re = args[0] if _filepat_re else fnmatch.translate(args[0])  
+      if _verbosity > 3:
+        print("Searching for: r'%s'" % filepat_re)  
 
-    compiled_re = re.compile(filepat_re, _re_flags)  
-    for dirname in args[1:]:
-      do_glob(compiled_re, dirname)
-    sys.exit(0)
+      compiled_re = re.compile(filepat_re, _re_flags)  
+      for dirname in args[1:]:
+        do_glob(compiled_re, dirname)
+
+      sys.exit(0)
+    except Exception as ex:
+      report_exception("GLOB mode error", ex, -1)
 
   if _run_mode == RunMode.TAG:
-    pass
+    try:
+      assert len(args) > 0, "Arguments are required" 
+      assert False, "Not implemented" 
+    except Exception as ex:
+      report_exception("TAG mode error", ex, -1)
