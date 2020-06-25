@@ -32,8 +32,8 @@ import getopt
 import signal
 import traceback
 import re
-import fnmatch
 import codecs
+import fnmatch
 
 from enum import Enum
 
@@ -52,6 +52,11 @@ class RunMode(Enum):
   GLOB = 2
   TAG = 3
 
+class SkipMode(Enum):
+  ENABLED = 1
+  OVERRIDE = 2
+  DISABLED = 3
+
 """ Defaults """
 _verbosity = 9
 _max_line_part = 40
@@ -59,13 +64,15 @@ _show_context = False
 _colors_enabled = True
 _re_flags = 0
 _run_mode = RunMode.GREP 
-_skip_enabled = True
 _filepat_re = False
 
 """ Globals """
 _out_fd = None 
 _output_name = None
 _run_mode_default = True
+
+_extra_skip = None
+_skip_mode = SkipMode.ENABLED
 
 # Color output support
 class Color(object):
@@ -128,20 +135,21 @@ def print_good_lines(fn, good_lines):
         Color.prn("default", "%4d: %s" % (n, a))
 
 def dirlist_filter(dirlist):
-  global _skip_enabled, _dirs_to_skip
-  if _skip_enabled:
+  global _dirs_to_skip
+  if _dirs_to_skip:
     return list(filter(lambda x: x not in _dirs_to_skip, dirlist))
   return dirlist
 
-def filelist_filter(filelist, filepatter):
-  global _skip_enabled, _files_to_skip
-  outlist = list(fnmatch.filter(filelist, filepat))
-  if _skip_enabled:
+def filelist_filter(filelist, filepattern):
+  global _files_to_skip
+  outlist = list(fnmatch.filter(filelist, filepattern))
+  if _files_to_skip:
+    outlist2 = list()
     for filename in outlist:
-      for pat in _files_to_skip:
-        if fnmatch.fnmatch(filename, pat):
-          outlist.remove(filename)
-          break 
+      res = [n for n in _files_to_skip if fnmatch.fnmatch(filename, n)]
+      if not res:
+        outlist2.append(filename)
+    return outlist2    
   return outlist  
 
 def grep_file(filename, pattern):
@@ -188,7 +196,27 @@ def do_glob(filepat_re, dirname):
         Color.prn_n("default", os.path.join(root, a)) 
         Color.prn_n("green", b)
         Color.prn("default", c)
- 
+
+def manage_skip_lists():
+  """ Manage skiplists """
+  global _dirs_to_skip, _files_to_skip, _skip_mode
+
+  """ flush both dir and file skiplists if skip is disabled """
+  if _skip_mode == SkipMode.DISABLED: 
+    _dirs_to_skip = []
+
+  elif _skip_mode == SkipMode.OVERRIDE or _skip_mode == SkipMode.DISABLED: 
+    _files_to_skip = []
+
+  elif _skip_mode == SkipMode.ENABLED: 
+    """ Load additional skip list from user file """
+    for fn in _skiplist_files:
+      fns = os.path.expanduser(fn)
+      if os.path.exists(fns):
+        with open_uf(fns, "r") as ifd:
+          for ln in ifd:
+            _files_to_skip.append(ln[:-1])
+
 def signal_handler(signal, frame): #pylint: disable=unused-argument
   sys.stdout.write("\nInterrupted. Exiting ...\n")
   sys.exit(-1)
@@ -205,8 +233,9 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                                "hogetiCSDr",
-                               ["help", "output", "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug", "regexp"])
+                                "ho:getiCSDrx:X:",
+                               ["help", "output", "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug",\
+                                "regexp", "exclude", "exclude-override"])
   except getopt.GetoptError as ex:
     usage(ex)
 
@@ -228,13 +257,18 @@ if __name__ == '__main__':
       _re_flags |= re.IGNORECASE
     elif o in ("-C", "--no-color"):
       _colors_enabled = False
-    elif o in ("-S", "--no-color"):
-      _skip_enabled = False
+    elif o in ("-S", "--no-skip"):
+      _skip_mode = SkipMode.DISABLED
     elif o in ("-D", "--debug"):
       _verbosity = 9
     elif o in ("-r", "--regexp"):
       assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
       _filepat_re = True
+    elif o in ("-x", "--exclude"):
+      _extra_skip = a
+    elif o in ("-X", "--exclude-override"):
+      _extra_skip = a
+      _skip_mode = SkipMode.OVERRIDE
     else:
       assert False, "Unhandled option '%s'" % o
 
@@ -245,13 +279,13 @@ if __name__ == '__main__':
   if _output_name != None:
     _out_fd = open(_output_name, "w")
 
-  """ Load additional skiplists """
-  for fn in _skiplist_files:
-    fns = os.path.expanduser(fn)
-    if os.path.exists(fns):
-      with open_uf(fns, "r") as ifd:
-        for ln in ifd:
-          _files_to_skip.append(ln[:-1])
+  """ Manage skiplists """
+  manage_skip_lists()
+
+  if _extra_skip != None:
+    _files_to_skip += _extra_skip.split(":")
+
+  print ("XXX: ", repr(_files_to_skip))    
 
   if _run_mode == RunMode.GREP:
     """ args should be textpattern filepattern1 filepatternN
