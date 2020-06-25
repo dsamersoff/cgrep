@@ -33,7 +33,6 @@ _files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll", "*.a",
                   "*.gch", "*.pch", "*.pdb", "*.swp", "*.icu",
                   "*.jpg", "*.ttf", "*.gif", "*png", "*.tiff", "*.ico"]
 
-_extra_skip = []
 _skiplist_files = [".cgrepignore", "~/.cgrepignore", "~/.config/cgrep/ignore"]
 
 # Color output support
@@ -101,7 +100,14 @@ def dirlist_filter(dirlist):
   return list(filter(lambda x: x not in _dirs_to_skip, dirlist))
 
 def filelist_filter(filelist, filepatter):
-  return filelist  
+  global _files_to_skip
+  outlist = list(fnmatch.filter(filelist, filepat))
+  for filename in outlist:
+    for pat in _files_to_skip:
+      if fnmatch.fnmatch(filename, pat):
+        outlist.remove(filename)
+        break 
+  return outlist  
 
 def grep_file(filename, pattern):
   """ Grep over the single file, store all matched lines into list"""
@@ -178,7 +184,7 @@ if __name__ == '__main__':
     if os.path.exists(fns):
       with open_uf(fns, "r") as ifd:
         for ln in ifd:
-          _extra_skip.append(ln[:-1])
+          _files_to_skip.append(ln[:-1])
 
   """ Run grep """
   """ args should be textpattern filepattern1 filepatternN"""
