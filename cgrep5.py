@@ -5,7 +5,25 @@
 # version 1.01 2020-04-29
 
 _HELP="""
-    ....
+  Advanced grep tool that can:
+
+  Find a file recursively:
+    cgrep -o outfile -g[i] filename_glob dir1 dirN
+
+  Find pattern in file
+    cgrep -o outfile -e[i] text_pattern file_pattern1 file_patternN
+
+  Scoped find (ctags)
+    cgrep -o outfile -t filename.tag scope:pattern
+    (.tags used by default, scope: p - prototype, f - function, c - class, s - struct, m - member, t - type)
+
+  Tips:
+    Build tag file:
+      ctags -R --c++-types=+px --extra=+q --excmd=pattern --exclude=Makefile --exclude=.tags -f .tags
+    Use files to add more items to default skip: .cgrepignore ~/.cgrepignore or ~/.config/cgrep/ignore
+
+  TODO: 
+    Return code from grep
   """
 
 import os
@@ -17,15 +35,8 @@ import re
 import fnmatch
 import codecs
 
-_verbosity = 9
-_max_line_part = 40
-_show_context = False
-_out_fd = None 
-_colors_enabled = True
-_re_flags = 0
+from enum import Enum
 
-
-""" Parameters """
 _dirs_to_skip = [".hg", ".git", ".svn", "CVS", "RCS", "SCCS"]
 _files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll", "*.a",
                   "*.o", "*.obj", "*.class",
@@ -34,6 +45,27 @@ _files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll", "*.a",
                   "*.jpg", "*.ttf", "*.gif", "*png", "*.tiff", "*.ico"]
 
 _skiplist_files = [".cgrepignore", "~/.cgrepignore", "~/.config/cgrep/ignore"]
+
+
+class RunMode(Enum):
+  GREP = 1
+  GLOB = 2
+  TAG = 3
+
+""" Defaults """
+_verbosity = 9
+_max_line_part = 40
+_show_context = False
+_colors_enabled = True
+_re_flags = 0
+_run_mode = RunMode.GREP 
+_skip_enabled = True
+_filepat_re = False
+
+""" Globals """
+_out_fd = None 
+_output_name = None
+_run_mode_default = True
 
 # Color output support
 class Color(object):
@@ -96,17 +128,20 @@ def print_good_lines(fn, good_lines):
         Color.prn("default", "%4d: %s" % (n, a))
 
 def dirlist_filter(dirlist):
-  global _dirs_to_skip
-  return list(filter(lambda x: x not in _dirs_to_skip, dirlist))
+  global _skip_enabled, _dirs_to_skip
+  if _skip_enabled:
+    return list(filter(lambda x: x not in _dirs_to_skip, dirlist))
+  return dirlist
 
 def filelist_filter(filelist, filepatter):
-  global _files_to_skip
+  global _skip_enabled, _files_to_skip
   outlist = list(fnmatch.filter(filelist, filepat))
-  for filename in outlist:
-    for pat in _files_to_skip:
-      if fnmatch.fnmatch(filename, pat):
-        outlist.remove(filename)
-        break 
+  if _skip_enabled:
+    for filename in outlist:
+      for pat in _files_to_skip:
+        if fnmatch.fnmatch(filename, pat):
+          outlist.remove(filename)
+          break 
   return outlist  
 
 def grep_file(filename, pattern):
@@ -128,8 +163,8 @@ def grep_file(filename, pattern):
       prev_ln = (line_count, ln, "", "")
   return good_lines
 
-""" grep search """
 def do_grep(filepattern, textpattern, dirname):
+  """ grep over the directories """
   for root, dirs, files in os.walk(dirname, topdown=True):
     dirs[:] = dirlist_filter(dirs)
     files[:] = filelist_filter(files, filepattern)
@@ -140,6 +175,19 @@ def do_grep(filepattern, textpattern, dirname):
         print_good_lines(fn, good_lines)
       except Exception as ex:
         report_exception(fn, ex)
+
+def do_glob(filepat_re, dirname):
+  """ find files that names matches pattern """
+  for root, dirs, files in os.walk(dirname, topdown=True):
+    dirs[:] = dirlist_filter(dirs)
+    for fname in files:
+      m = filepat_re.search(fname)
+      if m != None:
+        (a, b, c) = (m.string[:m.start(0)], m.string[m.start(0):m.end(0)], m.string[m.end(0):])
+        fn = os.path.join(root, fname)
+        Color.prn_n("default", os.path.join(root, a)) 
+        Color.prn_n("green", b)
+        Color.prn("default", c)
  
 def signal_handler(signal, frame): #pylint: disable=unused-argument
   sys.stdout.write("\nInterrupted. Exiting ...\n")
@@ -157,28 +205,47 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                                "h",
-                               ["help"])
+                                "hogetiCSDr",
+                               ["help", "output", "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug", "regexp"])
   except getopt.GetoptError as ex:
     usage(ex)
 
   for o, a in opts:
     if o in ("-h", "--help"):
       usage()
+    elif o in ("-o", "--output"):
+      _output_name = a
+    elif o in ("-g", "--glob"):
+      assert _run_mode_default, "Run mode already set"
+      (_run_mode, _run_mode_default) = (RunMode.GLOB, False)
+    elif o in ("-e", "--grep"):
+      assert _run_mode_default, "Run mode already set"
+      (_run_mode, _run_mode_default) = (RunMode.GREP, False)
+    elif o in ("-t", "--tag"):
+      assert _run_mode_default, "Run mode already set"
+      (_run_mode, _run_mode_default) = (RunMode.TAG, False)
+    elif o in ("-i", "--ignorecase"):
+      _re_flags |= re.IGNORECASE
+    elif o in ("-C", "--no-color"):
+      _colors_enabled = False
+    elif o in ("-S", "--no-color"):
+      _skip_enabled = False
+    elif o in ("-D", "--debug"):
+      _verbosity = 9
+    elif o in ("-r", "--regexp"):
+      assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
+      _filepat_re = True
     else:
-      assert False, "unhandled option"
+      assert False, "Unhandled option '%s'" % o
 
   if not sys.stdout.isatty():
     """ output is redirected, disable colors """
     _colors_enabled = False
 
-  """ Validate parameters before actual run """
-  try:
-    pass
-  except Exception as ex:
-    usage(ex)  
+  if _output_name != None:
+    _out_fd = open(_output_name, "w")
 
-  """ Load skiplists """
+  """ Load additional skiplists """
   for fn in _skiplist_files:
     fns = os.path.expanduser(fn)
     if os.path.exists(fns):
@@ -186,14 +253,32 @@ if __name__ == '__main__':
         for ln in ifd:
           _files_to_skip.append(ln[:-1])
 
-  """ Run grep """
-  """ args should be textpattern filepattern1 filepatternN"""
-  if len(args) == 1:
-    """ only textpattern present """
-    args.append("*")
+  if _run_mode == RunMode.GREP:
+    """ args should be textpattern filepattern1 filepatternN
+        file pattern is glob and case sensitive
+    """
+    if len(args) == 1:
+      """ Adding default filepattern if necessary """
+      args.append("*")
 
-  textpat = re.compile(args[0], _re_flags)
+    textpat = re.compile(args[0], _re_flags)
+    for filepat in args[1:]:
+      do_grep(filepat, textpat, ".")
+    sys.exit(0)
+      
+  if _run_mode == RunMode.GLOB:
+    if len(args) == 1:
+      """ Adding default dir if necessary """
+      args.append(".")
 
-  """ file pattern is glob and case sensitive """
-  for filepat in args[1:]:
-    do_grep(filepat, textpat, ".")
+    filepat_re = args[0] if _filepat_re else fnmatch.translate(args[0])  
+    if _verbosity > 3:
+      print("Searching for: r'%s'" % filepat_re)  
+
+    compiled_re = re.compile(filepat_re, _re_flags)  
+    for dirname in args[1:]:
+      do_glob(compiled_re, dirname)
+    sys.exit(0)
+
+  if _run_mode == RunMode.TAG:
+    pass
