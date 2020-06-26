@@ -41,3 +41,21 @@ if [ $ret -eq 1 ]; then
 else
   echo "TEST FAILED expected 2 got $ret"
 fi  
+
+echo "###### TEST 4 GLOB" >> $CWD/cgrep5_test.log 
+$PYTHON $CWD/cgrep5.py -O $CWD/cgrep5_test.log -gRi "linux_aarch*" 
+ret=$?
+if [ $ret -eq 17 ]; then
+  echo "TEST PASSED"
+else
+  echo "TEST FAILED expected 2 got $ret"
+fi  
+
+echo "###### TEST 5 GLOB" >> $CWD/cgrep5_test.log 
+$PYTHON $CWD/cgrep5.py -O $CWD/cgrep5_test.log -gi "linux_aarch" 
+ret=$?
+if [ $ret -eq 17 ]; then
+  echo "TEST PASSED"
+else
+  echo "TEST FAILED expected 2 got $ret"
+fi  

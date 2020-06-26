@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # vim: expandtab shiftwidth=2 softtabstop=2
 
-# version 5.01.01 2020-06-25
+# version 5.02 2020-06-26
 
 _HELP="""
   Advanced grep tool that can:
@@ -58,13 +58,13 @@ class SkipMode(Enum):
   DISABLED = 3
 
 """ Defaults (could be edited) """
-_verbosity = 9
+_verbosity = 2
 _max_line_part = 40
 _show_context = False
 _colors_enabled = True
 _re_flags = 0
 _run_mode = RunMode.GREP 
-_filepat_re = False
+_filepat_re = True
 _default_tagfile = ".tags"
 _console_fd = sys.stdout
 
@@ -221,17 +221,19 @@ def do_ctags(tagfile, scope, ident):
 # GLOB Search for file name
 def do_glob(filepat_re, dirname):
   """ find files that names matches pattern """
+  found = 0
   for root, dirs, files in os.walk(dirname, topdown=True):
     dirs[:] = dirlist_filter(dirs)
     for fname in files:
       m = filepat_re.search(fname)
       if m != None:
+        found += 1
         (a, b, c) = (m.string[:m.start(0)], m.string[m.start(0):m.end(0)], m.string[m.end(0):])
         fn = os.path.join(root, fname)
         Color.prn_n(os.path.join(root, a)) 
         Color.prn_n(b, "green")
         Color.prn(c)
-
+  return found      
 
 # Utility functions
 def manage_skip_lists():
@@ -270,9 +272,9 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                                "ho:O:getiCSDrx:X:",
+                                "ho:O:getiCSdrRx:X:",
                                ["help", "output", "only-output" "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug",\
-                                "regexp", "exclude", "exclude-override"])
+                                "regexp", "no-regexp", "exclude", "exclude-override"])
   except getopt.GetoptError as ex:
     usage(ex)
 
@@ -299,11 +301,14 @@ if __name__ == '__main__':
       _colors_enabled = False
     elif o in ("-S", "--no-skip"):
       _skip_mode = SkipMode.DISABLED
-    elif o in ("-D", "--debug"):
+    elif o in ("-d", "--debug"):
       _verbosity = 9
     elif o in ("-r", "--regexp"):
       assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
       _filepat_re = True
+    elif o in ("-R", "--no-regexp"):
+      assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
+      _filepat_re = False
     elif o in ("-x", "--exclude"):
       _extra_skip = a
     elif o in ("-X", "--exclude-override"):
@@ -355,11 +360,11 @@ if __name__ == '__main__':
       if _verbosity > 3:
         print("Searching for: r'%s'" % filepat_re)  
 
+      found = 0
       compiled_re = re.compile(filepat_re, _re_flags)  
       for dirname in args[1:]:
-        do_glob(compiled_re, dirname)
-
-      sys.exit(0)
+        found += do_glob(compiled_re, dirname)
+      sys.exit(found)
     except Exception as ex:
       report_exception("GLOB mode error", ex, -1)
 
