@@ -20,10 +20,8 @@ _HELP="""
   Tips:
     Build tag file:
       ctags -R --c++-types=+px --extra=+q --excmd=pattern --exclude=Makefile --exclude=.tags -f .tags
-    Use files to add more items to default skip: .cgrepignore ~/.cgrepignore or ~/.config/cgrep/ignore
 
-  TODO: 
-    Return code from grep
+    Use files to add more items to default skip: .cgrepignore ~/.cgrepignore or ~/.config/cgrep/ignore
   """
 
 import os
@@ -46,6 +44,8 @@ _files_to_skip = ["*.exe", "*.bin", "*.so", "*.dynlib", "*.dll", "*.a",
 
 _skiplist_files = [".cgrepignore", "~/.cgrepignore", "~/.config/cgrep/ignore"]
 
+_known_scopes = ["p", "f", "c", "s", "m",
+                 "t", "d", "e"]
 
 class RunMode(Enum):
   GREP = 1
@@ -57,7 +57,7 @@ class SkipMode(Enum):
   OVERRIDE = 2
   DISABLED = 3
 
-""" Defaults """
+""" Defaults (could be edited) """
 _verbosity = 9
 _max_line_part = 40
 _show_context = False
@@ -65,13 +65,13 @@ _colors_enabled = True
 _re_flags = 0
 _run_mode = RunMode.GREP 
 _filepat_re = False
-
-""" Globals """
-_out_fd = None 
+_default_tagfile = ".tags"
 _console_fd = sys.stdout
+
+""" Globals (nothing to edit) """
+_out_fd = None 
 _output_name = None
 _run_mode_default = True
-
 _extra_skip = None
 _skip_mode = SkipMode.ENABLED
 
@@ -152,6 +152,20 @@ def filelist_filter(filelist, filepattern):
     return outlist2    
   return outlist  
 
+def get_tag(tagln, scope, ident_re):
+  if not tagln.startswith("!"):
+    try:
+      (tagname, srcfile, tagpattern, tagscope) = tagln.split("\t", 3)
+      if tagscope[0] == scope and ident_re.match(tagname) != None:
+        tagpattern = tagpattern[1:-3] if tagpattern.endswith(';"') else tagpattern[1:-1]
+        tagpattern = tagpattern.replace("(", "\\(").replace(")", "\\)")
+        tag_re = re.compile(tagpattern[1:-3])
+        return (tagname, srcfile, tag_re)
+    except Exception as ex:
+      report_exception("CTAGS line format error: '%s'" % tagln, ex)
+  return (None, None, None)
+
+# GREP Search for pattern within file
 def grep_file(filename, pattern):
   """ Grep over the single file, store all matched lines into list"""
   line_count = 0
@@ -189,6 +203,22 @@ def do_grep(filepattern, textpattern, dirname):
         report_exception(fn, ex)
   return total_found      
 
+# TAG grep file using ctags tag file
+def do_ctags(tagfile, scope, ident):
+  """ grep over files using ctags patterns, no skips """
+  global _re_flags
+  ident_re = re.compile(ident, _re_flags)
+  total_found = 0
+  with open_uf(tagfile, "r") as tagf:
+    for ln in tagf:
+      (tagname, srcfile, tag_re) = get_tag(ln, scope, ident_re)
+      if tagname != None:
+        (found, good_lines) = grep_file(srcfile, tag_re)
+        total_found += found
+        print_good_lines(srcfile, good_lines)
+  return total_found      
+
+# GLOB Search for file name
 def do_glob(filepat_re, dirname):
   """ find files that names matches pattern """
   for root, dirs, files in os.walk(dirname, topdown=True):
@@ -202,6 +232,8 @@ def do_glob(filepat_re, dirname):
         Color.prn_n(b, "green")
         Color.prn(c)
 
+
+# Utility functions
 def manage_skip_lists():
   """ Manage skiplists """
   global _dirs_to_skip, _files_to_skip, _skip_mode
@@ -280,7 +312,6 @@ if __name__ == '__main__':
     else:
       assert False, "Unhandled option '%s'" % o
 
-
   if not sys.stdout.isatty():
     """ output is redirected, disable colors """
     _colors_enabled = False
@@ -333,8 +364,17 @@ if __name__ == '__main__':
       report_exception("GLOB mode error", ex, -1)
 
   if _run_mode == RunMode.TAG:
+    """ args should be tagfile filepattern - mytags.tag f:main"""
     try:
-      assert len(args) > 0, "Arguments are required" 
-      assert False, "Not implemented" 
+      assert len(args) == 1 or len(args) == 2, "Invalid number of arguments"
+      if len(args) == 1:
+        args.insert(0, _default_tagfile)
+
+      assert args[1].find(":") != -1, "Invalid tag search format %s, should be scope:ident" % args[1]
+      (scope, ident) = args[1].split(":")
+      assert scope in _known_scopes, "Invalid tag search scope %s" % scope
+
+      found = do_ctags(args[0], scope, ident)
+      sys.exit(found)
     except Exception as ex:
       report_exception("TAG mode error", ex, -1)
