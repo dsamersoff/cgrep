@@ -29,15 +29,24 @@ This utility written purely in a python.
 
 ### Additional Flags:
 
--i      - ignorecase",
+-i      - ignorecase
+
 -C      - turn off coloring
+
 -d      - utility debugging 
+
 -o file - duplicate output to a file
+
 -O file - redirect output to a file 
+
 -r      - use regexp for file searching
+
 -R      - use shell-matching for file searching
+
 -x list - add items to file skip list, e.g. "*.md:*ignore"
+
 -X list - replace file skip list with items
+
 -S      - turn off file and directory skipping
 
 ### Tips:
