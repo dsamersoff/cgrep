@@ -83,33 +83,26 @@ class Color(object):
                  "white" : 37}
 
   @staticmethod
-  def cl(color=None, msg=""):
+  def cl(color, msg):
     """ Return ANSI colored message """
     global _colors_enabled
-
-    if not _colors_enabled:
-      return msg
-    if color is None or color == "/":
-      return "\033[0m"
-    if msg != "":
+    if _colors_enabled:
       return "\033[%dm%s\033[0m" % (Color.ANSI_COLORS[color], msg)
-    return "\033[%dm" % Color.ANSI_COLORS[color]
+    return msg  
   
   @staticmethod
-  def prn(color, msg):
-    global _console_fd, _out_fd
-    if _out_fd != None:  
-      _out_fd.write(msg + "\n")
-    if _console_fd != None:  
-      _console_fd.write(Color.cl(color, msg) + "\n")
-
-  @staticmethod
-  def prn_n(color, msg):
+  def prn_n(msg, color="default"):
+    """ Print colored message, no eol """
     global _console_fd, _out_fd
     if _out_fd != None:  
       _out_fd.write(msg)
     if _console_fd != None:  
       _console_fd.write(Color.cl(color, msg))
+
+  @staticmethod
+  def prn(msg, color="default"):
+    """ Print colored message """
+    Color.prn_n(msg + "\n", color)
 ## 
 
 def open_uf(filename, mode):
@@ -118,16 +111,16 @@ def open_uf(filename, mode):
 
 def report_exception(msg, ex, exit_code=None):
   """ Report exception """
-  Color.prn("magenta", msg + "(%s)" % str(ex))
+  Color.prn(msg + "(%s)" % str(ex), "magenta")
   if _verbosity > 3:
-    Color.prn("default", traceback.format_exc())
+    Color.prn(traceback.format_exc())
   if exit_code != None:
     sys.exit(exit_code)  
 
 def print_good_lines(fn, good_lines):
   """ Print lines that match pattern """
   if good_lines:
-    Color.prn("yellow", fn)
+    Color.prn(fn, "yellow")
     for (n, a, b, c) in good_lines:
       if b != "" or c != "":
         if len(a) > _max_line_part:
@@ -135,11 +128,11 @@ def print_good_lines(fn, good_lines):
         if len(c) > _max_line_part:
           c = c[:_max_line_part] + "..."
      
-        Color.prn_n("default", "%4d: %s" % (n, a))
-        Color.prn_n("green", b)
-        Color.prn("default", c)
+        Color.prn_n("%4d: %s" % (n, a))
+        Color.prn_n(b, "green")
+        Color.prn(c)
       else:
-        Color.prn("default", "%4d: %s" % (n, a))
+        Color.prn("%4d: %s" % (n, a))
 
 def dirlist_filter(dirlist):
   global _dirs_to_skip
@@ -205,9 +198,9 @@ def do_glob(filepat_re, dirname):
       if m != None:
         (a, b, c) = (m.string[:m.start(0)], m.string[m.start(0):m.end(0)], m.string[m.end(0):])
         fn = os.path.join(root, fname)
-        Color.prn_n("default", os.path.join(root, a)) 
-        Color.prn_n("green", b)
-        Color.prn("default", c)
+        Color.prn_n(os.path.join(root, a)) 
+        Color.prn_n(b, "green")
+        Color.prn(c)
 
 def manage_skip_lists():
   """ Manage skiplists """
