@@ -1,34 +1,49 @@
 # cgrep
 
-This project is an advanced grep utility optimized for programmers. This utility written purely in a python.
+This project is an advanced grep utility with ANSI coloring, optimized for code inspection. 
+This utility written purely in a python.
 
-cgrep operates in tree different modes:
-  -g File finding mode
-  -e Regex search mode
-  -t Tagged search mode
+  Find a file recursively:
 
+    cgrep -o outfile -g[i] filename_glob dir1 dirN
 
-Flags supported in all modes:
+  Find pattern in file
 
--c Turn off color output (color output disabled by default on MS Windows)
--i Ignore case
--s Don't warn about skipped files
--S Ignore build-in skip list
--o Output resul
--x Exclude file/dir matched pattern from search
+    cgrep -o outfile -e[i] text_pattern file_pattern1 file_patternN
 
+  Scoped identifier search (ctags)
 
-## File finding mode (-g)
+    cgrep -o outfile -t filename.tag scope:pattern
 
-In this mode cgrep recursively searches through list of files and display files that matches **glob** expression.
+### Examples:
 
-```
-  #cgrep -g -x "*i386*" stack
-  Skipped ./.git
-  ./src/stackFrame.h
-  ./src/stackFrame_aarch64.cpp
-  ./src/stackFrame_arm.cpp
-  ./src/stackFrame_x64.cpp
-```
-flags supported in this mode:
-  -d Search directories only
+    cgrep.py -o cgrep_test.log dlopen
+
+    cgrep.py -O cgrep_test.log "dlopen_.*\(const"
+
+    cgrep.py -t .tags e:ACCESS_OK
+
+    cgrep.py -gRi "linux_aarch*" 
+
+    cgrep.py -gi "linux_aarch" 
+
+### Additional Flags:
+
+-i      - ignorecase",
+-C      - turn off coloring
+-d      - utility debugging 
+-o file - duplicate output to a file
+-O file - redirect output to a file 
+-r      - use regexp for file searching
+-R      - use shell-matching for file searching
+-x list - add items to file skip list, e.g. "*.md:*ignore"
+-X list - replace file skip list with items
+-S      - turn off file and directory skipping
+
+### Tips:
+Build tag file:
+
+    ctags -R --c++-types=+px --extra=+q --excmd=pattern --exclude=Makefile --exclude=.tags -f .tags
+
+Use files to add more items to default skip: .cgrepignore ~/.cgrepignore or ~/.config/cgrep/ignore
+
