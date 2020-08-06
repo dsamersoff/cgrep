@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 # vim: expandtab shiftwidth=2 softtabstop=2
 
-# version 5.102 2020-06-26
+_BANNER="""
+  Advanced Coder Grep  
+  Version 5.103 2020-08-06
+  Author: Dmitry Samersoff dms@samersoff.net
+"""   
 
 _HELP="""
-  Advanced grep tool that can:
+  Usage:
 
   Find a file recursively:
     cgrep -o outfile -g[i] filename_glob dir1 dirN
@@ -71,7 +75,6 @@ _console_fd = sys.stdout
 """ Globals (nothing to edit) """
 _out_fd = None 
 _output_name = None
-_run_mode_default = True
 _extra_skip = None
 _skip_mode = SkipMode.ENABLED
 
@@ -272,51 +275,53 @@ if __name__ == '__main__':
 
   try:
     opts, args = getopt.getopt(sys.argv[1:],
-                                "ho:O:getiCSdrRx:X:",
+                                "ho:O:getiCSdrRx:X:V",
                                ["help", "output", "only-output" "glob", "grep", "tag", "ignorecase", "no-color", "no-skip", "debug",\
-                                "regexp", "no-regexp", "exclude", "exclude-override"])
-  except getopt.GetoptError as ex:
-    usage(ex)
+                                "regexp", "no-regexp", "exclude", "exclude-override", "version"])
 
-  for o, a in opts:
-    if o in ("-h", "--help"):
-      usage()
-    elif o in ("-o", "--output"):
-      _output_name = a
-    elif o in ("-O", "--only-output"):
-      _output_name = a
-      _console_fd = None
-    elif o in ("-g", "--glob"):
-      assert _run_mode_default, "Run mode already set"
-      (_run_mode, _run_mode_default) = (RunMode.GLOB, False)
-    elif o in ("-e", "--grep"):
-      assert _run_mode_default, "Run mode already set"
-      (_run_mode, _run_mode_default) = (RunMode.GREP, False)
-    elif o in ("-t", "--tag"):
-      assert _run_mode_default, "Run mode already set"
-      (_run_mode, _run_mode_default) = (RunMode.TAG, False)
-    elif o in ("-i", "--ignorecase"):
-      _re_flags |= re.IGNORECASE
-    elif o in ("-C", "--no-color"):
-      _colors_enabled = False
-    elif o in ("-S", "--no-skip"):
-      _skip_mode = SkipMode.DISABLED
-    elif o in ("-d", "--debug"):
-      _verbosity = 9
-    elif o in ("-r", "--regexp"):
-      assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
-      _filepat_re = True
-    elif o in ("-R", "--no-regexp"):
-      assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
-      _filepat_re = False
-    elif o in ("-x", "--exclude"):
-      _extra_skip = a
-    elif o in ("-X", "--exclude-override"):
-      _extra_skip = a
-      _skip_mode = SkipMode.OVERRIDE
-    else:
-      assert False, "Unhandled option '%s'" % o
+    for o, a in opts:
+      if o in ("-h", "--help", "-V", "--version"):
+        print(_BANNER)
+        if o in ("-h", "--help"):
+          usage()
+        sys.exit(7)  
+      elif o in ("-o", "--output"):
+        _output_name = a
+      elif o in ("-O", "--only-output"):
+        _output_name = a
+        _console_fd = None
+      elif o in ("-g", "--glob"):
+        _run_mode = RunMode.GLOB
+      elif o in ("-e", "--grep"):
+        _run_mode = RunMode.GREP
+      elif o in ("-t", "--tag"):
+        _run_mode = RunMode.TAG
+      elif o in ("-i", "--ignorecase"):
+        _re_flags |= re.IGNORECASE
+      elif o in ("-C", "--no-color"):
+        _colors_enabled = False
+      elif o in ("-S", "--no-skip"):
+        _skip_mode = SkipMode.DISABLED
+      elif o in ("-d", "--debug"):
+        _verbosity = 9
+      elif o in ("-r", "--regexp"):
+        assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
+        _filepat_re = True
+      elif o in ("-R", "--no-regexp"):
+        assert _run_mode == RunMode.GLOB, "Glob mode should be selected first"
+        _filepat_re = False
+      elif o in ("-x", "--exclude"):
+        _extra_skip = a
+      elif o in ("-X", "--exclude-override"):
+        _extra_skip = a
+        _skip_mode = SkipMode.OVERRIDE
+      else:
+        assert False, "Unhandled option '%s'" % o
 
+  # except getopt.GetoptError as ex:
+  except Exception as ex:
+    usage("Bad command line: %s (%s) " % (str(ex), repr(sys.argv[1:])))
+    
   if not sys.stdout.isatty():
     """ output is redirected, disable colors """
     _colors_enabled = False

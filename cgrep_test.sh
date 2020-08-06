@@ -15,6 +15,15 @@ then
   ctags -R --c++-types=+px --extra=+q --excmd=pattern --exclude=Makefile --exclude=.tags -f $CWD/.tags
 fi
 
+$PYTHON $CWD/cgrep.py -V >> $CWD/cgrep_test.log 
+ret=$?
+if [ $ret -eq 7 ]; then
+  echo "BOTSTRAP OK"
+  cat $CWD/cgrep_test.log 
+else
+  echo "BOOTSTRAP FAILED expected 7 got $ret"
+fi  
+
 echo "###### TEST 1 GREP" >> $CWD/cgrep_test.log 
 $PYTHON $CWD/cgrep.py -O $CWD/cgrep_test.log dlopen
 ret=$?
